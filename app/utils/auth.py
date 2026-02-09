@@ -1,9 +1,48 @@
 from fastapi import Header, HTTPException, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.core.firebase import verify_firebase_token
 from app.database import get_db
-from app.crud.user import get_user_by_firebase_uid, create_user
+from app.models.user import User
+
+
+def ensure_db_user(decoded: dict, db: Session) -> User:
+    firebase_uid = decoded["uid"]
+    email = decoded.get("email")
+
+    # 1️⃣ Try by firebase_uid
+    user = db.query(User).filter(
+        User.firebase_uid == firebase_uid
+    ).first()
+    if user:
+        return user
+
+    # 2️⃣ Try by email (link accounts)
+    if email:
+        user = db.query(User).filter(
+            User.email == email
+        ).first()
+        if user:
+            user.firebase_uid = firebase_uid
+            db.commit()
+            return user
+
+    # 3️⃣ Create safely
+    user = User(
+        firebase_uid=firebase_uid,
+        email=email
+    )
+
+    try:
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user
+    except IntegrityError:
+        db.rollback()
+        return db.query(User).filter(User.email == email).first()
+
 
 def get_current_user(
     authorization: str = Header(...),
@@ -15,18 +54,12 @@ def get_current_user(
     token = authorization.split(" ")[1]
     decoded = verify_firebase_token(token)
 
-    uid = decoded["uid"]
-    email = decoded.get("email")
+    db_user = ensure_db_user(decoded, db)
 
-    user = get_user_by_firebase_uid(db, uid)
-    if not user:
-        user = create_user(db, uid, email)
-
-    # ✅ RETURN EVERYTHING AS DICT
     return {
-        "uid": user.firebase_uid,
-        "email": user.email,
-        "role": user.role,
-        "name": user.name,     # 👈 ADD
-        "phone": user.phone    # 👈 ADD
+        "uid": db_user.firebase_uid,
+        "email": db_user.email,
+        "role": db_user.role,
+        "name": db_user.name,
+        "phone": db_user.phone
     }

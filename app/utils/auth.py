@@ -11,27 +11,24 @@ def ensure_db_user(decoded: dict, db: Session) -> User:
     firebase_uid = decoded["uid"]
     email = decoded.get("email")
 
-    # 1️⃣ Try by firebase_uid
-    user = db.query(User).filter(
-        User.firebase_uid == firebase_uid
-    ).first()
+    # 1️⃣ Find by firebase UID
+    user = db.query(User).filter(User.firebase_uid == firebase_uid).first()
     if user:
         return user
 
-    # 2️⃣ Try by email (link accounts)
+    # 2️⃣ Link by email (important for Google sign-in / admin)
     if email:
-        user = db.query(User).filter(
-            User.email == email
-        ).first()
+        user = db.query(User).filter(User.email == email).first()
         if user:
             user.firebase_uid = firebase_uid
             db.commit()
             return user
 
-    # 3️⃣ Create safely
+    # 3️⃣ Create new user
     user = User(
         firebase_uid=firebase_uid,
-        email=email
+        email=email,
+        role="UNASSIGNED"
     )
 
     try:
@@ -45,15 +42,24 @@ def ensure_db_user(decoded: dict, db: Session) -> User:
 
 
 def get_current_user(
-    authorization: str = Header(...),
+    authorization: str | None = Header(default=None),
     db: Session = Depends(get_db)
 ):
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization header missing"
+        )
+
     if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid token format")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Authorization header"
+        )
 
-    token = authorization.split(" ")[1]
+    token = authorization.replace("Bearer ", "").strip()
+
     decoded = verify_firebase_token(token)
-
     db_user = ensure_db_user(decoded, db)
 
     return {

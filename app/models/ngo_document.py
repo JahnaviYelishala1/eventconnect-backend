@@ -13,4 +13,5 @@ class NGODocument(Base):
     # REG_CERT | TRUST_DEED | PAN | 80G | 12A
 
     file_url = Column(String, nullable=False)
+    status = Column(String, default="PENDING") 
     uploaded_at = Column(DateTime, default=datetime.utcnow)

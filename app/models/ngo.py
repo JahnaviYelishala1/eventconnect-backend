@@ -20,3 +20,5 @@ class NGO(Base):
     )
 
     created_at = Column(DateTime, default=datetime.utcnow)
+
+

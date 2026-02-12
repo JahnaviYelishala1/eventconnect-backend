@@ -24,4 +24,4 @@ class Event(Base):
     food_prepared = Column(Float, nullable=True)
     food_consumed = Column(Float, nullable=True)
     food_surplus = Column(Float, nullable=True)
-    status = Column(String, default="CREATED")
+    booking_status = Column(String, nullable=True)

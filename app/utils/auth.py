@@ -14,6 +14,9 @@ def ensure_db_user(decoded: dict, db: Session) -> User:
     # 1️⃣ Find by firebase UID
     user = db.query(User).filter(User.firebase_uid == firebase_uid).first()
     if user:
+        if not user.email and email:
+            user.email = email
+            db.commit()
         return user
 
     # 2️⃣ Link by email (important for Google sign-in / admin)

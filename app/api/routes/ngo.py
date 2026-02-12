@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -8,6 +8,9 @@ from app.schemas.ngo import NGOCreate
 from app.schemas.ngo_document import NGODocumentCreate
 from app.utils.auth import get_current_user
 from app.schemas.ngo_document import NGODocumentStatusResponse
+from app.utils.image_upload import upload_ngo_image
+from app.core.cloudinary_config import cloudinary
+import cloudinary.uploader
 
 router = APIRouter(
     prefix="/api/ngos",
@@ -73,9 +76,7 @@ def upload_ngo_document(
 
     return {"message": "Document uploaded successfully"}
 
-# -----------------------------
-# GET MY NGO (FINAL FIX)
-# -----------------------------
+
 @router.get("/me")
 def get_my_ngo(
     db: Session = Depends(get_db),
@@ -150,3 +151,13 @@ def get_my_ngo_documents(
             for d in documents
         ]
     }
+
+
+@router.post("/upload-image")
+async def upload_image(
+    file: UploadFile = File(...),
+    user=Depends(get_current_user)
+):
+    url = upload_ngo_image(file.file)
+    return {"image_url": url}
+

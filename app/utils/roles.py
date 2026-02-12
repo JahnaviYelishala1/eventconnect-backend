@@ -18,3 +18,4 @@ def require_assigned_role(user = Depends(get_current_user)):
             detail="Please select a role first"
         )
     return user
+

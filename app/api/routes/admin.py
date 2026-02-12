@@ -20,6 +20,7 @@ def list_ngos(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
+    print("ADMIN USER:", user) 
     admin_only(user)
 
     ngos = db.query(NGO).order_by(NGO.created_at.desc()).all()

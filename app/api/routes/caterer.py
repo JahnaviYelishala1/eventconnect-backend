@@ -14,6 +14,10 @@ import cloudinary.uploader
 
 router = APIRouter(prefix="/api/caterers", tags=["Caterers"])
 
+# =====================================================
+# CREATE CATERER PROFILE
+# =====================================================
+
 @router.post("/profile")
 def create_caterer_profile(
     data: CatererCreate,
@@ -35,7 +39,7 @@ def create_caterer_profile(
     caterer = Caterer(
         user_id=db_user.id,
         business_name=data.business_name,
-        city=data.city,
+        city=data.city.lower(),
         min_capacity=data.min_capacity,
         max_capacity=data.max_capacity,
         price_per_plate=data.price_per_plate,
@@ -50,7 +54,7 @@ def create_caterer_profile(
     db.commit()
     db.refresh(caterer)
 
-    # Save services properly
+    # Save services
     for service in data.services:
         db.add(CatererService(
             caterer_id=caterer.id,
@@ -59,8 +63,12 @@ def create_caterer_profile(
 
     db.commit()
 
-    return {"message": "Caterer profile created"}
+    return {"message": "Caterer profile created successfully"}
 
+
+# =====================================================
+# MATCH CATERERS (CATER NINJA STYLE - DELHI NCR)
+# =====================================================
 
 @router.get("/match/{event_id}")
 def match_caterers(
@@ -90,7 +98,7 @@ def match_caterers(
     if not event_location:
         return []
 
-    MAX_DISTANCE_KM = 25
+    MAX_DISTANCE_KM = 30
     DELHI_NCR = ["delhi", "gurgaon", "noida", "ghaziabad", "faridabad"]
 
     caterers = db.query(Caterer).all()
@@ -98,18 +106,20 @@ def match_caterers(
 
     for caterer in caterers:
 
-        # 🔹 Delhi NCR filter
+        # 1️⃣ Delhi NCR filter
         if caterer.city.lower() not in DELHI_NCR:
             continue
 
-        # 🔹 Capacity filter
-        if (
-            event.attendees < caterer.min_capacity or
-            event.attendees > caterer.max_capacity
-        ):
+        # 2️⃣ Capacity filter
+        if event.attendees < caterer.min_capacity or event.attendees > caterer.max_capacity:
             continue
 
-        # 🔹 Distance filter
+        # 3️⃣ Service-type filter
+        caterer_services = [s.service_type for s in caterer.services]
+        if event.event_type not in caterer_services:
+            continue
+
+        # 4️⃣ Distance filter
         distance = calculate_distance(
             event_location.latitude,
             event_location.longitude,
@@ -120,18 +130,18 @@ def match_caterers(
         if distance > MAX_DISTANCE_KM:
             continue
 
-        # 🔹 Price filter
-        if min_price and caterer.price_per_plate < min_price:
+        # 5️⃣ Price filter
+        if min_price is not None and caterer.price_per_plate < min_price:
             continue
 
-        if max_price and caterer.price_per_plate > max_price:
+        if max_price is not None and caterer.price_per_plate > max_price:
             continue
 
-        # 🔹 Rating filter
-        if min_rating and caterer.rating < min_rating:
+        # 6️⃣ Rating filter
+        if min_rating is not None and caterer.rating < min_rating:
             continue
 
-        # 🔹 Veg / Nonveg filter
+        # 7️⃣ Veg / Nonveg filter
         if veg_only and not caterer.veg_supported:
             continue
 
@@ -146,10 +156,13 @@ def match_caterers(
             "rating": caterer.rating,
             "veg_supported": caterer.veg_supported,
             "nonveg_supported": caterer.nonveg_supported,
-            "distance_km": round(distance, 2)
+            "distance_km": round(distance, 2),
+            "image_url": caterer.image_url,
+            "min_capacity": caterer.min_capacity,
+            "max_capacity": caterer.max_capacity
         })
 
-    # 🔥 Sorting logic (like CatererNinja)
+    # Sorting logic
     if sort_by == "price_low":
         result.sort(key=lambda x: x["price_per_plate"])
     elif sort_by == "price_high":
@@ -157,11 +170,20 @@ def match_caterers(
     elif sort_by == "rating":
         result.sort(key=lambda x: x["rating"], reverse=True)
     else:
-        result.sort(key=lambda x: x["distance_km"])
+        result.sort(
+            key=lambda x: (
+                x["distance_km"],
+                -x["rating"],
+                x["price_per_plate"]
+            )
+        )
 
     return result
 
 
+# =====================================================
+# BOOK CATERER
+# =====================================================
 
 @router.post("/book/{event_id}/{caterer_id}")
 def book_caterer(
@@ -170,6 +192,7 @@ def book_caterer(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
+
     event = db.query(Event).filter(
         Event.id == event_id,
         Event.firebase_uid == user["uid"]
@@ -178,13 +201,10 @@ def book_caterer(
     if not event:
         raise HTTPException(404, "Event not found")
 
-    # ✅ PREVENT DUPLICATE BOOKING
-    existing = db.query(EventBooking).filter(
+    if db.query(EventBooking).filter(
         EventBooking.event_id == event_id
-    ).first()
-
-    if existing:
-        raise HTTPException(400, "Booking already requested for this event")
+    ).first():
+        raise HTTPException(400, "Booking already requested")
 
     booking = EventBooking(
         event_id=event_id,
@@ -197,14 +217,19 @@ def book_caterer(
     db.add(booking)
     db.commit()
 
-    return {"message": "Booking request sent"}
+    return {"message": "Booking request sent successfully"}
 
+
+# =====================================================
+# GET MY PROFILE
+# =====================================================
 
 @router.get("/profile/me", response_model=CatererResponse)
 def get_my_caterer_profile(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
+
     db_user = db.query(User).filter(
         User.firebase_uid == user["uid"]
     ).first()
@@ -221,12 +246,18 @@ def get_my_caterer_profile(
 
     return caterer
 
+
+# =====================================================
+# UPDATE PROFILE
+# =====================================================
+
 @router.put("/profile/me")
 def update_caterer_profile(
     data: CatererCreate = Body(...),
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
+
     db_user = db.query(User).filter(
         User.firebase_uid == user["uid"]
     ).first()
@@ -241,9 +272,8 @@ def update_caterer_profile(
     if not caterer:
         raise HTTPException(404, "Profile not found")
 
-    # Update fields
     caterer.business_name = data.business_name
-    caterer.city = data.city
+    caterer.city = data.city.lower()
     caterer.min_capacity = data.min_capacity
     caterer.max_capacity = data.max_capacity
     caterer.price_per_plate = data.price_per_plate
@@ -253,7 +283,7 @@ def update_caterer_profile(
     caterer.longitude = data.longitude
     caterer.image_url = data.image_url
 
-    # 🔥 IMPORTANT: Replace services properly
+    # Replace services
     db.query(CatererService).filter(
         CatererService.caterer_id == caterer.id
     ).delete()
@@ -265,16 +295,21 @@ def update_caterer_profile(
         ))
 
     db.commit()
-    db.refresh(caterer)
 
     return {"message": "Profile updated successfully"}
 
 
-@router.get("/profile")
-def get_caterer_profile(
+# =====================================================
+# UPLOAD IMAGE (UPLOAD + UPDATE DB)
+# =====================================================
+
+@router.post("/upload-image")
+async def upload_caterer_image(
+    file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
+
     db_user = db.query(User).filter(
         User.firebase_uid == user["uid"]
     ).first()
@@ -287,48 +322,20 @@ def get_caterer_profile(
     ).first()
 
     if not caterer:
-        return None
+        raise HTTPException(404, "Create profile first")
+
+    result = cloudinary.uploader.upload(
+        file.file,
+        folder="caterer_profiles",
+        resource_type="image"
+    )
+
+    image_url = result.get("secure_url")
+
+    caterer.image_url = image_url
+    db.commit()
 
     return {
-        "id": caterer.id,
-        "business_name": caterer.business_name,
-        "city": caterer.city,
-        "price_per_plate": caterer.price_per_plate,
-        "min_capacity": caterer.min_capacity,
-        "max_capacity": caterer.max_capacity,
-        "rating": caterer.rating,
-        "veg_supported": caterer.veg_supported,
-        "nonveg_supported": caterer.nonveg_supported,
-        "latitude": caterer.latitude,
-        "longitude": caterer.longitude,
-        "image_url": caterer.image_url,
-        "services": [s.service_type for s in caterer.services]
+        "image_url": image_url,
+        "message": "Image uploaded successfully"
     }
-
-
-@router.post("/upload-image")
-async def upload_caterer_image(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
-):
-    """Upload caterer profile image to Cloudinary"""
-    try:
-        # Validate user is a caterer
-        db_user = db.query(User).filter(
-            User.firebase_uid == user["uid"]
-        ).first()
-        
-        if not db_user or db_user.role != "caterer":
-            raise HTTPException(403, "Only caterers can upload images")
-        
-        # Upload to Cloudinary
-        result = cloudinary.uploader.upload(
-            file.file,
-            folder="caterer_profiles",
-            resource_type="image"
-        )
-        
-        return {"image_url": result.get("secure_url")}
-    except Exception as e:
-        raise HTTPException(500, f"Image upload failed: {str(e)}")

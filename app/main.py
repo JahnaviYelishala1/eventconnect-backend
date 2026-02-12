@@ -11,7 +11,7 @@ from app.api.routes import (
 )
 
 # Database
-from app.database import engine
+from app.database import Base, engine
 from app.models import caterer, user as user_model
 from app.models import event as event_model
 from app.core import firebase
@@ -37,6 +37,7 @@ def root():
 
 # ---------------- DATABASE INIT ----------------
 # ⚠️ IMPORTANT: models must be imported BEFORE create_all
+Base.metadata.create_all(bind=engine)
 user_model.Base.metadata.create_all(bind=engine)
 event_model.Base.metadata.create_all(bind=engine)
 ngo_profile_model.Base.metadata.create_all(bind=engine)

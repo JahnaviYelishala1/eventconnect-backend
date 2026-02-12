@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.booking import Booking
+from app.models.event_booking import EventBooking
+from app.models.caterer import Caterer
 from app.models.event import Event
 from app.models.user import User
 from app.utils.auth import get_current_user
@@ -26,7 +27,7 @@ def request_booking(
     if not event:
         raise HTTPException(404, "Event not found")
 
-    booking = Booking(
+    booking = EventBooking(
         event_id=event_id,
         caterer_id=caterer_id
     )
@@ -46,23 +47,52 @@ def get_caterer_requests(
     user=Depends(get_current_user)
 ):
 
-    caterer = db.query(User).filter(
+    caterer_user = db.query(User).filter(
         User.firebase_uid == user["uid"],
         User.role == "caterer"
     ).first()
 
-    if not caterer:
+    if not caterer_user:
         raise HTTPException(403, "Not authorized")
 
+    caterer = db.query(Caterer).filter(
+        Caterer.user_id == caterer_user.id
+    ).first()
+
+    if not caterer:
+        return []
+
     bookings = (
-        db.query(Booking)
-        .join(Event, Booking.event_id == Event.id)
+        db.query(EventBooking)
+        .join(Event, EventBooking.event_id == Event.id)
         .filter(
-            Booking.caterer_id == caterer.id,
-            Booking.status == "PENDING"
+            EventBooking.caterer_id == caterer.id,
+            EventBooking.status == "PENDING"
         )
         .all()
     )
+
+    result = []
+
+    for booking in bookings:
+        event = booking.event
+
+        result.append({
+            "booking_id": booking.id,
+            "event_id": event.id,
+            "event_name": event.event_name,
+            "event_type": event.event_type,
+            "attendees": event.attendees,
+            "duration_hours": event.duration_hours,
+            "meal_style": event.meal_style,
+            "location_type": event.location_type,
+            "estimated_food_quantity": event.estimated_food_quantity,
+            "unit": event.unit,
+            "status": booking.status
+        })
+
+    return result
+
 
     result = []
 
@@ -95,8 +125,8 @@ def respond_booking(
     user=Depends(get_current_user)
 ):
 
-    booking = db.query(Booking).filter(
-        Booking.id == booking_id
+    booking = db.query(EventBooking).filter(
+        EventBooking.id == booking_id
     ).first()
 
     if not booking:
@@ -120,3 +150,38 @@ def respond_booking(
 
     return {"message": f"Booking {status}"}
 
+@router.get("/event/{event_id}")
+def get_event_booking_status(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+
+    event = db.query(Event).filter(
+        Event.id == event_id,
+        Event.firebase_uid == user["uid"]
+    ).first()
+
+    if not event:
+        raise HTTPException(404, "Event not found")
+
+    booking = db.query(EventBooking).filter(
+        EventBooking.event_id == event_id
+    ).first()
+
+    if not booking:
+        return {
+            "event_id": event_id,
+            "status": "NONE",
+            "caterer_name": None
+        }
+
+    caterer = db.query(Caterer).filter(
+        Caterer.id == booking.caterer_id
+    ).first()
+
+    return {
+        "event_id": event_id,
+        "status": booking.status,
+        "caterer_name": caterer.business_name if caterer else None
+    }

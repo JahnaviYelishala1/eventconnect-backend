@@ -18,8 +18,12 @@ class Caterer(Base):
 
     veg_supported = Column(Boolean, default=True)
     nonveg_supported = Column(Boolean, default=False)
+    image_url = Column(String, nullable=True)
 
     rating = Column(Float, default=4.0)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+
 
     user = relationship("User")
     services = relationship("CatererService", back_populates="caterer")

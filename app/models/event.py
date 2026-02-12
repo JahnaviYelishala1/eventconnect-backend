@@ -20,8 +20,8 @@ class Event(Base):
     estimated_food_quantity = Column(Float, nullable=False)
     unit = Column(String, default="kg")
 
-    # ✅ NEW FIELDS
     food_prepared = Column(Float, nullable=True)
     food_consumed = Column(Float, nullable=True)
     food_surplus = Column(Float, nullable=True)
-    booking_status = Column(String, nullable=True)
+
+    status = Column(String, default="CREATED")

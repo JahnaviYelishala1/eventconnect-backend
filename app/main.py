@@ -3,6 +3,7 @@ from fastapi import FastAPI
 # Routers
 from app.api.routes import (
     health,
+    organizer,
     profile,
     protected,
     user,
@@ -53,6 +54,7 @@ app.include_router(admin.router)
 app.include_router(profile.router)
 app.include_router(caterer.router)
 app.include_router(booking.router)
+app.include_router(organizer.router)
 
 
 # ML & Events

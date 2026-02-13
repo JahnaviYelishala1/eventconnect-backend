@@ -6,6 +6,7 @@ from app.models.organizer import Organizer
 from app.schemas.organizer import OrganizerCreate, OrganizerResponse
 from app.utils.auth import get_current_user
 import cloudinary.uploader
+from app.core.cloudinary_config import cloudinary
 
 router = APIRouter(prefix="/api/organizer", tags=["Organizer"])
 
@@ -20,7 +21,7 @@ def create_profile(
         User.firebase_uid == user["uid"]
     ).first()
 
-    if not db_user or db_user.role != "organizer":
+    if not db_user or db_user.role != "event_organizer":
         raise HTTPException(403, "Only organizers allowed")
 
     if db.query(Organizer).filter(
@@ -53,7 +54,7 @@ def get_profile(
         User.firebase_uid == user["uid"]
     ).first()
 
-    if not db_user or db_user.role != "organizer":
+    if not db_user or db_user.role != "event_organizer":
         raise HTTPException(403, "Not authorized")
 
     organizer = db.query(Organizer).filter(
@@ -76,7 +77,7 @@ def update_profile(
         User.firebase_uid == user["uid"]
     ).first()
 
-    if not db_user or db_user.role != "organizer":
+    if not db_user or db_user.role != "event_organizer":
         raise HTTPException(403, "Not authorized")
 
     organizer = db.query(Organizer).filter(
@@ -112,7 +113,7 @@ async def upload_organizer_image(
         User.firebase_uid == user["uid"]
     ).first()
 
-    if not db_user or db_user.role != "organizer":
+    if not db_user or db_user.role != "event_organizer":
         raise HTTPException(403, "Only organizers allowed")
 
     organizer = db.query(Organizer).filter(

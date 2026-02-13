@@ -70,59 +70,43 @@ def create_caterer_profile(
 # MATCH CATERERS (CATER NINJA STYLE - DELHI NCR)
 # =====================================================
 
-@router.get("/match/{event_id}")
-def match_caterers(
-    event_id: int,
-    min_price: float = None,
-    max_price: float = None,
-    min_rating: float = None,
+# =====================================================
+# SEARCH CATERERS (CATER NINJA STYLE)
+# =====================================================
+
+@router.get("/search")
+def search_caterers(
+    latitude: float,
+    longitude: float,
+    guest_count: int,
+    event_type: str,
     veg_only: bool = False,
     nonveg_only: bool = False,
-    sort_by: str = "distance",
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
+    min_price: float = None,
+    max_price: float = None,
+    db: Session = Depends(get_db)
 ):
 
-    event = db.query(Event).filter(
-        Event.id == event_id,
-        Event.firebase_uid == user["uid"]
-    ).first()
-
-    if not event:
-        return []
-
-    event_location = db.query(EventLocation).filter(
-        EventLocation.event_id == event.id
-    ).first()
-
-    if not event_location:
-        return []
-
     MAX_DISTANCE_KM = 30
-    DELHI_NCR = ["delhi", "gurgaon", "noida", "ghaziabad", "faridabad"]
 
     caterers = db.query(Caterer).all()
     result = []
 
     for caterer in caterers:
 
-        # 1️⃣ Delhi NCR filter
-        if caterer.city.lower() not in DELHI_NCR:
+        # 1️⃣ Capacity Filter
+        if guest_count < caterer.min_capacity or guest_count > caterer.max_capacity:
             continue
 
-        # 2️⃣ Capacity filter
-        if event.attendees < caterer.min_capacity or event.attendees > caterer.max_capacity:
+        # 2️⃣ Event Type Filter
+        services = [s.service_type for s in caterer.services]
+        if event_type.lower() not in [s.lower() for s in services]:
             continue
 
-        # 3️⃣ Service-type filter
-        caterer_services = [s.service_type for s in caterer.services]
-        if event.event_type not in caterer_services:
-            continue
-
-        # 4️⃣ Distance filter
+        # 3️⃣ Distance Filter
         distance = calculate_distance(
-            event_location.latitude,
-            event_location.longitude,
+            latitude,
+            longitude,
             caterer.latitude,
             caterer.longitude
         )
@@ -130,22 +114,18 @@ def match_caterers(
         if distance > MAX_DISTANCE_KM:
             continue
 
-        # 5️⃣ Price filter
-        if min_price is not None and caterer.price_per_plate < min_price:
-            continue
-
-        if max_price is not None and caterer.price_per_plate > max_price:
-            continue
-
-        # 6️⃣ Rating filter
-        if min_rating is not None and caterer.rating < min_rating:
-            continue
-
-        # 7️⃣ Veg / Nonveg filter
+        # 4️⃣ Veg / NonVeg Filter
         if veg_only and not caterer.veg_supported:
             continue
 
         if nonveg_only and not caterer.nonveg_supported:
+            continue
+
+        # 5️⃣ Budget Filter
+        if min_price is not None and caterer.price_per_plate < min_price:
+            continue
+
+        if max_price is not None and caterer.price_per_plate > max_price:
             continue
 
         result.append({
@@ -162,23 +142,10 @@ def match_caterers(
             "max_capacity": caterer.max_capacity
         })
 
-    # Sorting logic
-    if sort_by == "price_low":
-        result.sort(key=lambda x: x["price_per_plate"])
-    elif sort_by == "price_high":
-        result.sort(key=lambda x: x["price_per_plate"], reverse=True)
-    elif sort_by == "rating":
-        result.sort(key=lambda x: x["rating"], reverse=True)
-    else:
-        result.sort(
-            key=lambda x: (
-                x["distance_km"],
-                -x["rating"],
-                x["price_per_plate"]
-            )
-        )
+    result.sort(key=lambda x: (x["distance_km"], -x["rating"]))
 
     return result
+
 
 
 # =====================================================

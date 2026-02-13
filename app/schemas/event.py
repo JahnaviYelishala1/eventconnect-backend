@@ -12,6 +12,12 @@ class EventCreate(BaseModel):
     location_type: str
     season: str
 
+    address: str
+    city: str
+    pincode: str
+    latitude: float
+    longitude: float
+
 
 class EventResponse(BaseModel):
     id: int

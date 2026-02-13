@@ -15,7 +15,8 @@ router = APIRouter(
 )
 
 
-@router.post("", response_model=EventResponse)
+
+@router.post("")
 def create_event_api(
     data: EventCreate,
     db: Session = Depends(get_db),
@@ -38,6 +39,21 @@ def create_event_api(
         data=data,
         estimated_food_quantity=predicted_food
     )
+
+    # 🔥 Save location immediately
+    location = EventLocation(
+        event_id=event.id,
+        address=data.address,
+        city=data.city,
+        pincode=data.pincode,
+        latitude=data.latitude,
+        longitude=data.longitude,
+        location_type=data.location_type
+    )
+
+    db.add(location)
+    db.commit()
+    db.refresh(event)
 
     return event
 
@@ -130,3 +146,19 @@ def complete_event(
         "surplus": event.food_surplus,
         "status": event.status
     }
+
+@router.get("/{event_id}", response_model=EventResponse)
+def get_event_by_id(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    event = db.query(Event).filter(
+        Event.id == event_id,
+        Event.firebase_uid == user["uid"]
+    ).first()
+
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    return event

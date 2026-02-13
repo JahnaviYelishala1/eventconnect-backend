@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Body
+from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
@@ -6,9 +6,8 @@ from app.models.organizer import Organizer
 from app.schemas.organizer import OrganizerCreate, OrganizerResponse
 from app.utils.auth import get_current_user
 import cloudinary.uploader
-from app.core.cloudinary_config import cloudinary
 
-router = APIRouter(prefix="/api/organizer", tags=["Organizer"])
+router = APIRouter(prefix="/api/organizers", tags=["Organizer"])
 
 
 @router.post("/profile")
@@ -101,7 +100,6 @@ def update_profile(
     }
 
 
-
 @router.post("/upload-image")
 async def upload_organizer_image(
     file: UploadFile = File(...),
@@ -123,7 +121,7 @@ async def upload_organizer_image(
     if not organizer:
         raise HTTPException(404, "Create profile first")
 
-    # 🔥 Upload to Cloudinary
+    # Upload to Cloudinary
     result = cloudinary.uploader.upload(
         file.file,
         folder="organizer_profiles",
@@ -132,7 +130,7 @@ async def upload_organizer_image(
 
     image_url = result.get("secure_url")
 
-    # 🔥 Save to database
+    # Save to database
     organizer.profile_image_url = image_url
     db.commit()
 
@@ -140,3 +138,4 @@ async def upload_organizer_image(
         "image_url": image_url,
         "message": "Image uploaded successfully"
     }
+

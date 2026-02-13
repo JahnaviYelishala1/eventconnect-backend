@@ -33,9 +33,11 @@ class CatererResponse(BaseModel):
     latitude: float
     longitude: float
     image_url: Optional[str] = None
-    services: List[CatererServiceResponse]
+    distance_km: float
+    services: List[CatererServiceResponse] = []
 
     class Config:
         from_attributes = True
+
 
 

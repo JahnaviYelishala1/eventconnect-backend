@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Body, Depends, HTTPException, File, UploadFile
+from typing import List
+from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
@@ -11,12 +12,16 @@ from app.schemas.caterer import CatererCreate, CatererResponse
 from app.utils.auth import get_current_user
 from app.utils.distance import calculate_distance
 import cloudinary.uploader
+from typing import List, Optional
+from fastapi import Query
+from sqlalchemy.orm import Session
+
 
 router = APIRouter(prefix="/api/caterers", tags=["Caterers"])
 
-# =====================================================
-# CREATE CATERER PROFILE
-# =====================================================
+MAX_DISTANCE_KM = 30
+DELHI_NCR = ["delhi", "gurgaon", "noida", "ghaziabad", "faridabad"]
+
 
 @router.post("/profile")
 def create_caterer_profile(
@@ -54,7 +59,6 @@ def create_caterer_profile(
     db.commit()
     db.refresh(caterer)
 
-    # Save services
     for service in data.services:
         db.add(CatererService(
             caterer_id=caterer.id,
@@ -65,138 +69,11 @@ def create_caterer_profile(
 
     return {"message": "Caterer profile created successfully"}
 
-
-# =====================================================
-# MATCH CATERERS (CATER NINJA STYLE - DELHI NCR)
-# =====================================================
-
-# =====================================================
-# SEARCH CATERERS (CATER NINJA STYLE)
-# =====================================================
-
-@router.get("/search")
-def search_caterers(
-    latitude: float,
-    longitude: float,
-    guest_count: int,
-    event_type: str,
-    veg_only: bool = False,
-    nonveg_only: bool = False,
-    min_price: float = None,
-    max_price: float = None,
-    db: Session = Depends(get_db)
-):
-
-    MAX_DISTANCE_KM = 30
-
-    caterers = db.query(Caterer).all()
-    result = []
-
-    for caterer in caterers:
-
-        # 1️⃣ Capacity Filter
-        if guest_count < caterer.min_capacity or guest_count > caterer.max_capacity:
-            continue
-
-        # 2️⃣ Event Type Filter
-        services = [s.service_type for s in caterer.services]
-        if event_type.lower() not in [s.lower() for s in services]:
-            continue
-
-        # 3️⃣ Distance Filter
-        distance = calculate_distance(
-            latitude,
-            longitude,
-            caterer.latitude,
-            caterer.longitude
-        )
-
-        if distance > MAX_DISTANCE_KM:
-            continue
-
-        # 4️⃣ Veg / NonVeg Filter
-        if veg_only and not caterer.veg_supported:
-            continue
-
-        if nonveg_only and not caterer.nonveg_supported:
-            continue
-
-        # 5️⃣ Budget Filter
-        if min_price is not None and caterer.price_per_plate < min_price:
-            continue
-
-        if max_price is not None and caterer.price_per_plate > max_price:
-            continue
-
-        result.append({
-            "id": caterer.id,
-            "business_name": caterer.business_name,
-            "city": caterer.city,
-            "price_per_plate": caterer.price_per_plate,
-            "rating": caterer.rating,
-            "veg_supported": caterer.veg_supported,
-            "nonveg_supported": caterer.nonveg_supported,
-            "distance_km": round(distance, 2),
-            "image_url": caterer.image_url,
-            "min_capacity": caterer.min_capacity,
-            "max_capacity": caterer.max_capacity
-        })
-
-    result.sort(key=lambda x: (x["distance_km"], -x["rating"]))
-
-    return result
-
-
-
-# =====================================================
-# BOOK CATERER
-# =====================================================
-
-@router.post("/book/{event_id}/{caterer_id}")
-def book_caterer(
-    event_id: int,
-    caterer_id: int,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
-):
-
-    event = db.query(Event).filter(
-        Event.id == event_id,
-        Event.firebase_uid == user["uid"]
-    ).first()
-
-    if not event:
-        raise HTTPException(404, "Event not found")
-
-    if db.query(EventBooking).filter(
-        EventBooking.event_id == event_id
-    ).first():
-        raise HTTPException(400, "Booking already requested")
-
-    booking = EventBooking(
-        event_id=event_id,
-        caterer_id=caterer_id,
-        status="PENDING"
-    )
-
-    event.status = "BOOKING_REQUESTED"
-
-    db.add(booking)
-    db.commit()
-
-    return {"message": "Booking request sent successfully"}
-
-
-# =====================================================
-# GET MY PROFILE
-# =====================================================
-
 @router.get("/profile/me", response_model=CatererResponse)
 def get_my_caterer_profile(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-
     db_user = db.query(User).filter(
         User.firebase_uid == user["uid"]
     ).first()
@@ -213,18 +90,12 @@ def get_my_caterer_profile(
 
     return caterer
 
-
-# =====================================================
-# UPDATE PROFILE
-# =====================================================
-
 @router.put("/profile/me")
 def update_caterer_profile(
-    data: CatererCreate = Body(...),
+    data: CatererCreate,
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-
     db_user = db.query(User).filter(
         User.firebase_uid == user["uid"]
     ).first()
@@ -250,7 +121,6 @@ def update_caterer_profile(
     caterer.longitude = data.longitude
     caterer.image_url = data.image_url
 
-    # Replace services
     db.query(CatererService).filter(
         CatererService.caterer_id == caterer.id
     ).delete()
@@ -265,18 +135,12 @@ def update_caterer_profile(
 
     return {"message": "Profile updated successfully"}
 
-
-# =====================================================
-# UPLOAD IMAGE (UPLOAD + UPDATE DB)
-# =====================================================
-
 @router.post("/upload-image")
 async def upload_caterer_image(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-
     db_user = db.query(User).filter(
         User.firebase_uid == user["uid"]
     ).first()
@@ -297,12 +161,107 @@ async def upload_caterer_image(
         resource_type="image"
     )
 
-    image_url = result.get("secure_url")
-
-    caterer.image_url = image_url
+    caterer.image_url = result.get("secure_url")
     db.commit()
 
     return {
-        "image_url": image_url,
+        "image_url": caterer.image_url,
         "message": "Image uploaded successfully"
     }
+
+@router.get("/match/{event_id}", response_model=List[CatererResponse])
+def match_caterers(
+    event_id: int,
+    veg_only: Optional[bool] = Query(None),
+    nonveg_only: Optional[bool] = Query(None),
+    min_price: Optional[float] = Query(None),
+    max_price: Optional[float] = Query(None),
+    meal_style: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+
+    # 1️⃣ Get Event
+    event = db.query(Event).filter(
+        Event.id == event_id,
+        Event.firebase_uid == user["uid"]
+    ).first()
+
+    if not event:
+        return []
+
+    # 2️⃣ Get Location
+    location = db.query(EventLocation).filter(
+        EventLocation.event_id == event.id
+    ).first()
+
+    if not location:
+        return []
+
+    # 3️⃣ Fetch Caterers
+    caterers = db.query(Caterer).all()
+    matched = []
+
+    for caterer in caterers:
+
+        # Capacity filter
+        if event.attendees < caterer.min_capacity or event.attendees > caterer.max_capacity:
+            continue
+
+        # Distance filter
+        distance = calculate_distance(
+            location.latitude,
+            location.longitude,
+            caterer.latitude,
+            caterer.longitude
+        )
+
+        if distance > MAX_DISTANCE_KM:
+            continue
+
+        # Veg filter
+        if veg_only is True and not caterer.veg_supported:
+            continue
+
+        if nonveg_only is True and not caterer.nonveg_supported:
+            continue
+
+        # Budget filter
+        if min_price is not None and caterer.price_per_plate < min_price:
+            continue
+
+        if max_price is not None and caterer.price_per_plate > max_price:
+            continue
+
+        # Meal style filter
+        if meal_style:
+            if event.meal_style != meal_style:
+                continue
+
+        matched.append({
+            "id": caterer.id,
+            "business_name": caterer.business_name,
+            "city": caterer.city,
+            "min_capacity": caterer.min_capacity,
+            "max_capacity": caterer.max_capacity,
+            "price_per_plate": caterer.price_per_plate,
+            "veg_supported": caterer.veg_supported,
+            "nonveg_supported": caterer.nonveg_supported,
+            "rating": caterer.rating,
+            "latitude": caterer.latitude,
+            "longitude": caterer.longitude,
+            "image_url": caterer.image_url,
+            "distance_km": round(distance, 2),
+            "services": [
+                {
+                    "id": s.id,
+                    "service_type": s.service_type
+                }
+                for s in caterer.services
+            ]
+        })
+
+    # Sort after loop finishes
+    matched.sort(key=lambda x: x["distance_km"])
+
+    return matched

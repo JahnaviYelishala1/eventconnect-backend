@@ -27,3 +27,5 @@ class Caterer(Base):
 
     user = relationship("User")
     services = relationship("CatererService", back_populates="caterer")
+    meal_styles = relationship("CatererMealStyle", back_populates="caterer")
+    menus = relationship("CatererMenu", back_populates="caterer", cascade="all, delete")

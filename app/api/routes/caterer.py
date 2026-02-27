@@ -1,27 +1,26 @@
-from typing import List
-from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile, File
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
 from app.models.caterer import Caterer
 from app.models.caterer_service import CatererService
+from app.models.caterer_meal_style import CatererMealStyle
 from app.models.event import Event
-from app.models.event_booking import EventBooking
 from app.models.event_location import EventLocation
 from app.schemas.caterer import CatererCreate, CatererResponse
 from app.utils.auth import get_current_user
 from app.utils.distance import calculate_distance
 import cloudinary.uploader
-from typing import List, Optional
-from fastapi import Query
-from sqlalchemy.orm import Session
-
 
 router = APIRouter(prefix="/api/caterers", tags=["Caterers"])
 
 MAX_DISTANCE_KM = 30
-DELHI_NCR = ["delhi", "gurgaon", "noida", "ghaziabad", "faridabad"]
 
+
+# =====================================================
+# CREATE PROFILE
+# =====================================================
 
 @router.post("/profile")
 def create_caterer_profile(
@@ -59,17 +58,30 @@ def create_caterer_profile(
     db.commit()
     db.refresh(caterer)
 
+    # Add services
     for service in data.services:
         db.add(CatererService(
             caterer_id=caterer.id,
             service_type=service
         ))
 
+    # Add meal styles
+    for style in data.meal_styles:
+        db.add(CatererMealStyle(
+            caterer_id=caterer.id,
+            meal_style=style
+        ))
+
     db.commit()
 
     return {"message": "Caterer profile created successfully"}
 
-@router.get("/profile/me", response_model=CatererResponse)
+
+# =====================================================
+# GET PROFILE (FOR FRONTEND FIX)
+# =====================================================
+
+@router.get("/profile", response_model=CatererResponse)
 def get_my_caterer_profile(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
@@ -88,14 +100,43 @@ def get_my_caterer_profile(
     if not caterer:
         raise HTTPException(404, "Profile not created yet")
 
-    return caterer
+    return {
+        "id": caterer.id,
+        "business_name": caterer.business_name,
+        "city": caterer.city,
+        "min_capacity": caterer.min_capacity,
+        "max_capacity": caterer.max_capacity,
+        "price_per_plate": caterer.price_per_plate,
+        "veg_supported": caterer.veg_supported,
+        "nonveg_supported": caterer.nonveg_supported,
+        "rating": caterer.rating,
+        "latitude": caterer.latitude,
+        "longitude": caterer.longitude,
+        "image_url": caterer.image_url,
+        "distance_km": 0.0,  # REQUIRED by schema
+        "services": [
+    {
+        "id": s.id,
+        "service_type": s.service_type
+    }
+    for s in caterer.services
+],
+        "meal_styles": [
+            m.meal_style for m in caterer.meal_styles
+        ]
+    }
 
-@router.put("/profile/me")
+
+@router.put("/profile")
 def update_caterer_profile(
     data: CatererCreate,
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
+    """
+    Frontend can call PUT /api/caterers/profile
+    """
+
     db_user = db.query(User).filter(
         User.firebase_uid == user["uid"]
     ).first()
@@ -110,6 +151,7 @@ def update_caterer_profile(
     if not caterer:
         raise HTTPException(404, "Profile not found")
 
+    # Update base fields
     caterer.business_name = data.business_name
     caterer.city = data.city.lower()
     caterer.min_capacity = data.min_capacity
@@ -121,19 +163,38 @@ def update_caterer_profile(
     caterer.longitude = data.longitude
     caterer.image_url = data.image_url
 
+    # Delete old services
     db.query(CatererService).filter(
         CatererService.caterer_id == caterer.id
     ).delete()
 
+    # Delete old meal styles
+    db.query(CatererMealStyle).filter(
+        CatererMealStyle.caterer_id == caterer.id
+    ).delete()
+
+    # Add updated services
     for service in data.services:
         db.add(CatererService(
             caterer_id=caterer.id,
             service_type=service
         ))
 
+    # Add updated meal styles
+    for style in data.meal_styles:
+        db.add(CatererMealStyle(
+            caterer_id=caterer.id,
+            meal_style=style
+        ))
+
     db.commit()
 
     return {"message": "Profile updated successfully"}
+
+
+# =====================================================
+# IMAGE UPLOAD
+# =====================================================
 
 @router.post("/upload-image")
 async def upload_caterer_image(
@@ -169,6 +230,11 @@ async def upload_caterer_image(
         "message": "Image uploaded successfully"
     }
 
+
+# =====================================================
+# MATCH CATERERS
+# =====================================================
+
 @router.get("/match/{event_id}", response_model=List[CatererResponse])
 def match_caterers(
     event_id: int,
@@ -181,7 +247,6 @@ def match_caterers(
     user=Depends(get_current_user)
 ):
 
-    # 1️⃣ Get Event
     event = db.query(Event).filter(
         Event.id == event_id,
         Event.firebase_uid == user["uid"]
@@ -190,7 +255,6 @@ def match_caterers(
     if not event:
         return []
 
-    # 2️⃣ Get Location
     location = db.query(EventLocation).filter(
         EventLocation.event_id == event.id
     ).first()
@@ -198,17 +262,34 @@ def match_caterers(
     if not location:
         return []
 
-    # 3️⃣ Fetch Caterers
-    caterers = db.query(Caterer).all()
+    query = db.query(Caterer)
+
+    # Capacity filter
+    query = query.filter(
+        Caterer.min_capacity <= event.attendees,
+        Caterer.max_capacity >= event.attendees
+    )
+
+    # Price filter
+    if min_price is not None:
+        query = query.filter(Caterer.price_per_plate >= min_price)
+
+    if max_price is not None:
+        query = query.filter(Caterer.price_per_plate <= max_price)
+
+    # Veg filter
+    if veg_only:
+        query = query.filter(Caterer.veg_supported == True)
+
+    if nonveg_only:
+        query = query.filter(Caterer.nonveg_supported == True)
+
+    caterers = query.all()
+
     matched = []
 
     for caterer in caterers:
 
-        # Capacity filter
-        if event.attendees < caterer.min_capacity or event.attendees > caterer.max_capacity:
-            continue
-
-        # Distance filter
         distance = calculate_distance(
             location.latitude,
             location.longitude,
@@ -219,23 +300,8 @@ def match_caterers(
         if distance > MAX_DISTANCE_KM:
             continue
 
-        # Veg filter
-        if veg_only is True and not caterer.veg_supported:
-            continue
-
-        if nonveg_only is True and not caterer.nonveg_supported:
-            continue
-
-        # Budget filter
-        if min_price is not None and caterer.price_per_plate < min_price:
-            continue
-
-        if max_price is not None and caterer.price_per_plate > max_price:
-            continue
-
-        # Meal style filter
         if meal_style:
-            if event.meal_style != meal_style:
+            if meal_style not in [m.meal_style for m in caterer.meal_styles]:
                 continue
 
         matched.append({
@@ -253,15 +319,14 @@ def match_caterers(
             "image_url": caterer.image_url,
             "distance_km": round(distance, 2),
             "services": [
-                {
-                    "id": s.id,
-                    "service_type": s.service_type
-                }
+                {"id": s.id, "service_type": s.service_type}
                 for s in caterer.services
+            ],
+            "meal_styles": [
+                m.meal_style for m in caterer.meal_styles
             ]
         })
 
-    # Sort after loop finishes
     matched.sort(key=lambda x: x["distance_km"])
 
     return matched

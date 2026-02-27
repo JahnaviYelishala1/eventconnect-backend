@@ -1,129 +1,125 @@
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.booking_item import BookingItem
+from app.models.caterer_menu import CatererMenu
 from app.models.event_booking import EventBooking
 from app.models.caterer import Caterer
 from app.models.event import Event
 from app.models.user import User
+from app.schemas.booking import BookingResponse
 from app.utils.auth import get_current_user
-
+from app.schemas.booking import BookingCreate
 router = APIRouter(prefix="/api/bookings", tags=["Bookings"])
 
 
 # ---------------- HOST REQUEST BOOKING ----------------
-@router.post("/request/{event_id}/{caterer_id}")
-def request_booking(
-    event_id: int,
-    caterer_id: int,
+@router.post("/request", response_model=BookingResponse)
+def create_booking(
+    data: BookingCreate,
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
+
+    db_user = db.query(User).filter(
+        User.firebase_uid == user["uid"]
+    ).first()
+
+    if not db_user or db_user.role != "organizer":
+        raise HTTPException(403, "Only organizers allowed")
+
     event = db.query(Event).filter(
-        Event.id == event_id,
+        Event.id == data.event_id,
         Event.firebase_uid == user["uid"]
     ).first()
 
     if not event:
         raise HTTPException(404, "Event not found")
 
-    booking = EventBooking(
-        event_id=event_id,
-        caterer_id=caterer_id
-    )
+    caterer = db.query(Caterer).filter(
+        Caterer.id == data.caterer_id
+    ).first()
 
-    event.status = "BOOKING_REQUESTED"
+    if not caterer:
+        raise HTTPException(404, "Caterer not found")
+
+    total_price = 0
+
+    booking = EventBooking(
+        event_id=event.id,
+        caterer_id=caterer.id,
+        status="pending",
+        total_price=0
+    )
 
     db.add(booking)
     db.commit()
+    db.refresh(booking)
 
-    return {"message": "Booking requested"}
+    for item in data.items:
 
+        menu = db.query(CatererMenu).filter(
+            CatererMenu.id == item.menu_id,
+            CatererMenu.caterer_id == caterer.id
+        ).first()
 
-# ---------------- CATERER VIEW REQUESTS ----------------
-@router.get("/caterer-requests")
-def get_caterer_requests(
+        if not menu:
+            raise HTTPException(404, "Menu item invalid")
+
+        total_price += menu.price * item.quantity
+
+        db.add(BookingItem(
+            booking_id=booking.id,
+            menu_id=menu.id,
+            quantity=item.quantity
+        ))
+
+    booking.total_price = total_price
+    db.commit()
+
+    return booking
+
+@router.get("/caterer", response_model=List[BookingResponse])
+def get_caterer_bookings(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
 
-    caterer_user = db.query(User).filter(
-        User.firebase_uid == user["uid"],
-        User.role == "caterer"
+    db_user = db.query(User).filter(
+        User.firebase_uid == user["uid"]
     ).first()
 
-    if not caterer_user:
-        raise HTTPException(403, "Not authorized")
+    if not db_user or db_user.role != "caterer":
+        raise HTTPException(403, "Only caterers allowed")
 
     caterer = db.query(Caterer).filter(
-        Caterer.user_id == caterer_user.id
+        Caterer.user_id == db_user.id
     ).first()
 
-    if not caterer:
-        return []
+    return db.query(EventBooking).filter(
+        EventBooking.caterer_id == caterer.id
+    ).all()
 
-    bookings = (
-        db.query(EventBooking)
-        .join(Event, EventBooking.event_id == Event.id)
-        .filter(
-            EventBooking.caterer_id == caterer.id,
-            EventBooking.status == "PENDING"
-        )
-        .all()
-    )
-
-    result = []
-
-    for booking in bookings:
-        event = booking.event
-
-        result.append({
-            "booking_id": booking.id,
-            "event_id": event.id,
-            "event_name": event.event_name,
-            "event_type": event.event_type,
-            "attendees": event.attendees,
-            "duration_hours": event.duration_hours,
-            "meal_style": event.meal_style,
-            "location_type": event.location_type,
-            "estimated_food_quantity": event.estimated_food_quantity,
-            "unit": event.unit,
-            "status": booking.status
-        })
-
-    return result
-
-
-    result = []
-
-    for booking in bookings:
-        event = booking.event
-
-        result.append({
-            "booking_id": booking.id,
-            "event_id": event.id,
-            "event_name": event.event_name,
-            "event_type": event.event_type,
-            "attendees": event.attendees,
-            "duration_hours": event.duration_hours,
-            "meal_style": event.meal_style,
-            "location_type": event.location_type,
-            "estimated_food_quantity": event.estimated_food_quantity,
-            "unit": event.unit,
-            "status": booking.status
-        })
-
-    return result
-
-
-# ---------------- ACCEPT / REJECT ----------------
-@router.patch("/respond/{booking_id}")
-def respond_booking(
+@router.put("/{booking_id}/status")
+def update_booking_status(
     booking_id: int,
     status: str,
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
+
+    if status not in ["accepted", "rejected"]:
+        raise HTTPException(400, "Invalid status")
+
+    db_user = db.query(User).filter(
+        User.firebase_uid == user["uid"]
+    ).first()
+
+    if not db_user or db_user.role != "caterer":
+        raise HTTPException(403, "Only caterers allowed")
 
     booking = db.query(EventBooking).filter(
         EventBooking.id == booking_id
@@ -132,56 +128,7 @@ def respond_booking(
     if not booking:
         raise HTTPException(404, "Booking not found")
 
-    if status not in ["ACCEPTED", "REJECTED"]:
-        raise HTTPException(400, "Invalid status")
-
     booking.status = status
-
-    event = db.query(Event).filter(
-        Event.id == booking.event_id
-    ).first()
-
-    if status == "ACCEPTED":
-        event.status = "BOOKED"
-    else:
-        event.status = "CREATED"
-
     db.commit()
 
     return {"message": f"Booking {status}"}
-
-@router.get("/event/{event_id}")
-def get_event_booking_status(
-    event_id: int,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
-):
-
-    event = db.query(Event).filter(
-        Event.id == event_id,
-        Event.firebase_uid == user["uid"]
-    ).first()
-
-    if not event:
-        raise HTTPException(404, "Event not found")
-
-    booking = db.query(EventBooking).filter(
-        EventBooking.event_id == event_id
-    ).first()
-
-    if not booking:
-        return {
-            "event_id": event_id,
-            "status": "NONE",
-            "caterer_name": None
-        }
-
-    caterer = db.query(Caterer).filter(
-        Caterer.id == booking.caterer_id
-    ).first()
-
-    return {
-        "event_id": event_id,
-        "status": booking.status,
-        "caterer_name": caterer.business_name if caterer else None
-    }

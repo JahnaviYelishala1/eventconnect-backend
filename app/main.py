@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
 # Routers
 from app.api.routes import (
@@ -60,4 +60,5 @@ app.include_router(organizer.router)
 # ML & Events
 app.include_router(food_prediction.router)
 app.include_router(event.router)
+
 event_location_model.Base.metadata.create_all(bind=engine)

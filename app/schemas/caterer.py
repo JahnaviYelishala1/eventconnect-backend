@@ -42,4 +42,21 @@ class CatererResponse(BaseModel):
         from_attributes = True
 
 
+class CatererProfileResponse(BaseModel):
+    id: int
+    business_name: str
+    city: str
+    min_capacity: int
+    max_capacity: int
+    price_per_plate: float
+    veg_supported: bool
+    nonveg_supported: bool
+    rating: float
+    latitude: Optional[float]
+    longitude: Optional[float]
+    image_url: Optional[str]
+    services: List[CatererServiceResponse]
+    meal_styles: List[str]
 
+    class Config:
+        from_attributes = True

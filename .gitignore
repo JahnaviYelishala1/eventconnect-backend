@@ -12,3 +12,5 @@ firebase_service_account.json
 # OS / IDE
 .vscode/
 .idea/
+
+node_modules/

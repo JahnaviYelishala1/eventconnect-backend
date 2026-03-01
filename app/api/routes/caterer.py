@@ -8,7 +8,7 @@ from app.models.caterer_service import CatererService
 from app.models.caterer_meal_style import CatererMealStyle
 from app.models.event import Event
 from app.models.event_location import EventLocation
-from app.schemas.caterer import CatererCreate, CatererResponse
+from app.schemas.caterer import CatererCreate, CatererProfileResponse, CatererResponse
 from app.utils.auth import get_current_user
 from app.utils.distance import calculate_distance
 import cloudinary.uploader
@@ -81,7 +81,7 @@ def create_caterer_profile(
 # GET PROFILE (FOR FRONTEND FIX)
 # =====================================================
 
-@router.get("/profile", response_model=CatererResponse)
+@router.get("/profile", response_model=CatererProfileResponse)
 def get_my_caterer_profile(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
@@ -101,30 +101,26 @@ def get_my_caterer_profile(
         raise HTTPException(404, "Profile not created yet")
 
     return {
-        "id": caterer.id,
-        "business_name": caterer.business_name,
-        "city": caterer.city,
-        "min_capacity": caterer.min_capacity,
-        "max_capacity": caterer.max_capacity,
-        "price_per_plate": caterer.price_per_plate,
-        "veg_supported": caterer.veg_supported,
-        "nonveg_supported": caterer.nonveg_supported,
-        "rating": caterer.rating,
-        "latitude": caterer.latitude,
-        "longitude": caterer.longitude,
-        "image_url": caterer.image_url,
-        "distance_km": 0.0,  # REQUIRED by schema
-        "services": [
-    {
-        "id": s.id,
-        "service_type": s.service_type
-    }
-    for s in caterer.services
-],
-        "meal_styles": [
-            m.meal_style for m in caterer.meal_styles
-        ]
-    }
+    "id": caterer.id,
+    "business_name": caterer.business_name,
+    "city": caterer.city,
+    "min_capacity": caterer.min_capacity,
+    "max_capacity": caterer.max_capacity,
+    "price_per_plate": caterer.price_per_plate,
+    "veg_supported": caterer.veg_supported,
+    "nonveg_supported": caterer.nonveg_supported,
+    "rating": caterer.rating,
+    "latitude": caterer.latitude,
+    "longitude": caterer.longitude,
+    "image_url": caterer.image_url,
+    "services": [
+        {"service_type": s.service_type}
+        for s in caterer.services
+    ],
+    "meal_styles": [
+        m.meal_style for m in caterer.meal_styles
+    ]
+}
 
 
 @router.put("/profile")
@@ -330,3 +326,4 @@ def match_caterers(
     matched.sort(key=lambda x: x["distance_km"])
 
     return matched
+

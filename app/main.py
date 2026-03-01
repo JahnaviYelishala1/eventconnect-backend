@@ -8,7 +8,8 @@ from app.api.routes import (
     protected,
     user,
     food_prediction,
-    event
+    event,
+    menu
 )
 
 # Database
@@ -55,6 +56,7 @@ app.include_router(profile.router)
 app.include_router(caterer.router)
 app.include_router(booking.router)
 app.include_router(organizer.router)
+app.include_router(menu.router)
 
 
 # ML & Events

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
+from fastapi import File, UploadFile
+import cloudinary.uploader
 
 from app.database import get_db
 from app.models.user import User
@@ -36,7 +38,9 @@ def create_menu(
         item_name=data.item_name,
         description=data.description,
         price=data.price,
-        category=data.category
+        category=data.category,
+        food_type=data.food_type,
+        image_url=data.image_url
     )
 
     db.add(menu)
@@ -44,12 +48,6 @@ def create_menu(
     db.refresh(menu)
 
     return menu
-
-@router.get("/{caterer_id}", response_model=List[MenuResponse])
-def get_menu(caterer_id: int, db: Session = Depends(get_db)):
-    return db.query(CatererMenu).filter(
-        CatererMenu.caterer_id == caterer_id
-    ).all()
 
 @router.get("/me", response_model=List[MenuResponse])
 def get_my_menu(
@@ -70,6 +68,13 @@ def get_my_menu(
 
     return db.query(CatererMenu).filter(
         CatererMenu.caterer_id == caterer.id
+    ).all()
+
+
+@router.get("/{caterer_id}", response_model=List[MenuResponse])
+def get_menu(caterer_id: int, db: Session = Depends(get_db)):
+    return db.query(CatererMenu).filter(
+        CatererMenu.caterer_id == caterer_id
     ).all()
 
 @router.put("/{menu_id}", response_model=MenuResponse)
@@ -103,6 +108,7 @@ def update_menu(
     menu.description = data.description
     menu.price = data.price
     menu.category = data.category
+    menu.image_url = data.image_url
 
     db.commit()
     db.refresh(menu)
@@ -137,6 +143,28 @@ def delete_menu(
 
     db.delete(menu)
     db.commit()
-
     return {"message": "Menu deleted"}
 
+@router.post("/upload-image")
+async def upload_menu_image(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    db_user = db.query(User).filter(
+        User.firebase_uid == user["uid"]
+    ).first()
+
+    if not db_user or db_user.role != "caterer":
+        raise HTTPException(403, "Only caterers allowed")
+
+    result = cloudinary.uploader.upload(
+        file.file,
+        folder="menu_images",
+        resource_type="image"
+    )
+
+    return {
+        "image_url": result.get("secure_url"),
+        "message": "Menu image uploaded successfully"
+    }

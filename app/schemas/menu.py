@@ -6,6 +6,8 @@ class MenuCreate(BaseModel):
     description: Optional[str] = None
     price: float
     category: Optional[str] = None
+    food_type: str
+    image_url: Optional[str] = None 
 
 class MenuResponse(MenuCreate):
     id: int

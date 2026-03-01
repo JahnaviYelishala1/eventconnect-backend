@@ -8,7 +8,6 @@ class BookingItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     booking_id = Column(Integer, ForeignKey("event_bookings.id"))
     menu_id = Column(Integer, ForeignKey("caterer_menus.id"))
-
     quantity = Column(Integer, nullable=False)
 
     booking = relationship("EventBooking", back_populates="items")

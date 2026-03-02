@@ -11,9 +11,12 @@ class Settings(BaseSettings):
     cloudinary_api_key: str = Field(..., alias="CLOUDINARY_API_KEY")
     cloudinary_api_secret: str = Field(..., alias="CLOUDINARY_API_SECRET")
 
+    stripe_secret_key: str = Field(..., alias="STRIPE_SECRET_KEY")
+    stripe_webhook_secret: str = Field(..., alias="STRIPE_WEBHOOK_SECRET")
+
     class Config:
         env_file = ".env"
-        extra = "forbid"
+        extra = "allow"  # Ignore extra env vars
 
 
 settings = Settings()

@@ -4,12 +4,14 @@ from fastapi import APIRouter, FastAPI
 from app.api.routes import (
     health,
     organizer,
+    payment as payment_router,
     profile,
     protected,
     user,
     food_prediction,
     event,
-    menu
+    menu,
+    websocket
 )
 
 # Database
@@ -24,6 +26,7 @@ from app.models import event_location as event_location_model
 from app.api.routes import booking
 from app.models import caterer as caterer_model
 from app.api.routes import caterer
+from app.models import payment as payment_model
 
 # Create FastAPI app
 app = FastAPI(
@@ -44,6 +47,7 @@ user_model.Base.metadata.create_all(bind=engine)
 event_model.Base.metadata.create_all(bind=engine)
 ngo_profile_model.Base.metadata.create_all(bind=engine)
 caterer_model.Base.metadata.create_all(bind=engine)
+payment_model.Base.metadata.create_all(bind=engine)
 
 
 # ---------------- ROUTERS ----------------
@@ -57,7 +61,8 @@ app.include_router(caterer.router)
 app.include_router(booking.router)
 app.include_router(organizer.router)
 app.include_router(menu.router)
-
+app.include_router(websocket.router)
+app.include_router(payment_router.router)
 
 # ML & Events
 app.include_router(food_prediction.router)

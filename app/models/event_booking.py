@@ -24,3 +24,8 @@ class EventBooking(Base):
         back_populates="booking",
         cascade="all, delete-orphan"
     )
+
+    preparation_status = Column(
+    String,
+    default="pending"
+)

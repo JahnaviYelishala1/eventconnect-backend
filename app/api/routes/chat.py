@@ -6,10 +6,10 @@ from app.models.chat_message import ChatMessage
 from app.models.event_booking import EventBooking
 from app.models.user import User
 from app.models.caterer import Caterer
-from app.utils.auth import ensure_db_user, get_current_user, verify_firebase_token
+from app.utils.auth import get_current_user, verify_firebase_token
 import json
 
-router = APIRouter(prefix="/api", tags=["Chat"])
+router = APIRouter(prefix="/api")
 
 
 # ==========================================================
@@ -27,8 +27,9 @@ class ConnectionManager:
         self.active_connections[booking_id].append(websocket)
 
     def disconnect(self, booking_id: int, websocket: WebSocket):
-        if booking_id in self.active_connections and websocket in self.active_connections[booking_id]:
-            self.active_connections[booking_id].remove(websocket)
+        if booking_id in self.active_connections:
+            if websocket in self.active_connections[booking_id]:
+                self.active_connections[booking_id].remove(websocket)
 
     async def broadcast(self, booking_id: int, message: dict):
         if booking_id in self.active_connections:
@@ -55,10 +56,9 @@ async def chat_websocket(
     token = websocket.query_params.get("token")
 
     if not token:
-        await websocket.close(code=1008, reason="Missing token")
+        await websocket.close(code=1008)
         return
 
-    # Support both raw token and "Bearer <token>" query param formats.
     token = token.strip()
     if token.startswith("Bearer "):
         token = token.replace("Bearer ", "", 1).strip()
@@ -66,47 +66,58 @@ async def chat_websocket(
     try:
         user_data = verify_firebase_token(token)
     except HTTPException:
-        await websocket.close(code=1008, reason="Invalid token")
+        await websocket.close(code=1008)
         return
 
-    # Keep websocket auth behavior consistent with HTTP routes:
-    # create/link DB user from Firebase token if needed.
-    db_user = ensure_db_user(user_data, db)
+    # ✅ IMPORTANT FIX — use same DB lookup as HTTP route
+    db_user = db.query(User).filter(
+        User.firebase_uid == user_data["uid"]
+    ).first()
+
+    if not db_user:
+        await websocket.close(code=1008)
+        return
 
     booking = db.query(EventBooking).filter(
         EventBooking.id == booking_id
     ).first()
 
     if not booking:
-        await websocket.close(code=1008, reason="Booking not found")
+        await websocket.close(code=1008)
         return
 
-    # Only booking organizer or assigned caterer can access this chat.
-    booking_caterer = db.query(Caterer).filter(
-        Caterer.id == booking.caterer_id
-    ).first()
+    # ======================================================
+    # Correct Participant Validation
+    # ======================================================
 
     is_organizer = db_user.id == booking.organizer_id
+
+    caterer = db.query(Caterer).filter(
+        Caterer.user_id == db_user.id
+    ).first()
+
     is_assigned_caterer = bool(
-        booking_caterer and booking_caterer.user_id == db_user.id
+        caterer and caterer.id == booking.caterer_id
     )
 
     if not (is_organizer or is_assigned_caterer):
-        await websocket.close(code=1008, reason="Not a participant")
+        await websocket.close(code=1008)
         return
+
+    # ======================================================
 
     await manager.connect(booking_id, websocket)
 
     try:
         while True:
             data = await websocket.receive_text()
+
             try:
                 json_data = json.loads(data)
             except json.JSONDecodeError:
                 continue
 
             message_text = json_data.get("message")
-
             if not message_text:
                 continue
 
@@ -151,25 +162,27 @@ def get_chat_history(
     ).first()
 
     if not db_user:
-        raise HTTPException(status_code=403, detail="Unauthorized")
+        raise HTTPException(status_code=403)
 
     booking = db.query(EventBooking).filter(
         EventBooking.id == booking_id
     ).first()
 
     if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
+        raise HTTPException(status_code=404)
 
-    # Same participant validation for history
-    if db_user.id == booking.organizer_id:
-        pass
-    else:
-        caterer = db.query(Caterer).filter(
-            Caterer.user_id == db_user.id
-        ).first()
+    is_organizer = db_user.id == booking.organizer_id
 
-        if not caterer or caterer.id != booking.caterer_id:
-            raise HTTPException(status_code=403, detail="Not allowed")
+    caterer = db.query(Caterer).filter(
+        Caterer.user_id == db_user.id
+    ).first()
+
+    is_assigned_caterer = bool(
+        caterer and caterer.id == booking.caterer_id
+    )
+
+    if not (is_organizer or is_assigned_caterer):
+        raise HTTPException(status_code=403)
 
     messages = db.query(ChatMessage).filter(
         ChatMessage.booking_id == booking_id

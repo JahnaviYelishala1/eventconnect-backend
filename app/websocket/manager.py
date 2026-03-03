@@ -1,39 +1,27 @@
-# app/websocket/manager.py
-
-from typing import Dict
+from typing import Dict, List
 from fastapi import WebSocket
 
+
 class ConnectionManager:
-
     def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}
+        self.active_connections: Dict[int, List[WebSocket]] = {}
 
-    async def connect(self, user_id: str, websocket: WebSocket):
-        await websocket.accept()
+    async def connect(self, booking_id: int, websocket: WebSocket):
+        # ❌ REMOVE websocket.accept() from here
+        if booking_id not in self.active_connections:
+            self.active_connections[booking_id] = []
 
-        # If same user reconnects, replace old connection
-        if user_id in self.active_connections:
-            try:
-                await self.active_connections[user_id].close()
-            except:
-                pass
+        self.active_connections[booking_id].append(websocket)
 
-        self.active_connections[user_id] = websocket
+    def disconnect(self, booking_id: int, websocket: WebSocket):
+        if booking_id in self.active_connections:
+            if websocket in self.active_connections[booking_id]:
+                self.active_connections[booking_id].remove(websocket)
 
-    def disconnect(self, user_id: str):
-        if user_id in self.active_connections:
-            del self.active_connections[user_id]
+    async def broadcast(self, booking_id: int, message: dict):
+        if booking_id in self.active_connections:
+            for connection in list(self.active_connections[booking_id]):
+                await connection.send_json(message)
 
-    async def send_personal_message(self, user_id: str, message: dict):
-        websocket = self.active_connections.get(user_id)
-
-        if not websocket:
-            return
-
-        try:
-            await websocket.send_json(message)
-        except:
-            # Remove broken connection
-            self.disconnect(user_id)
 
 manager = ConnectionManager()

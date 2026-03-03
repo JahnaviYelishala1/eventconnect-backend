@@ -6,6 +6,7 @@ from app.api.routes import (
     health,
     organizer,
     payment as payment_router,
+    preparation,
     profile,
     protected,
     user,
@@ -65,6 +66,7 @@ app.include_router(menu.router)
 app.include_router(websocket.router)
 app.include_router(payment_router.router)
 app.include_router(chat.router)
+app.include_router(preparation.router)
 
 # ML & Events
 app.include_router(food_prediction.router)

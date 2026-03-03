@@ -1,17 +1,30 @@
 from fastapi import Header, HTTPException, Depends
+from firebase_admin import auth  # ✅ CORRECT IMPORT
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from app.core.firebase import verify_firebase_token
 from app.database import get_db
 from app.models.user import User
 
 
+# 🔐 Verify Firebase Token
+def verify_firebase_token(token: str):
+    try:
+        decoded_token = auth.verify_id_token(token)
+        return decoded_token
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token"
+        )
+
+
+# 👤 Ensure User Exists in Database
 def ensure_db_user(decoded: dict, db: Session) -> User:
     firebase_uid = decoded["uid"]
     email = decoded.get("email")
 
-    # 1️⃣ Find by firebase UID
+    # 1️⃣ Find by Firebase UID
     user = db.query(User).filter(User.firebase_uid == firebase_uid).first()
     if user:
         if not user.email and email:
@@ -19,7 +32,7 @@ def ensure_db_user(decoded: dict, db: Session) -> User:
             db.commit()
         return user
 
-    # 2️⃣ Link by email (important for Google sign-in / admin)
+    # 2️⃣ Link by email (Google sign-in case)
     if email:
         user = db.query(User).filter(User.email == email).first()
         if user:
@@ -44,6 +57,7 @@ def ensure_db_user(decoded: dict, db: Session) -> User:
         return db.query(User).filter(User.email == email).first()
 
 
+# 🔑 Dependency for Protected Routes
 def get_current_user(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db)
@@ -66,6 +80,7 @@ def get_current_user(
     db_user = ensure_db_user(decoded, db)
 
     return {
+        "id": db_user.id,
         "uid": db_user.firebase_uid,
         "email": db_user.email,
         "role": db_user.role,

@@ -2,6 +2,7 @@ from fastapi import APIRouter, FastAPI
 
 # Routers
 from app.api.routes import (
+    chat,
     health,
     organizer,
     payment as payment_router,
@@ -63,6 +64,7 @@ app.include_router(organizer.router)
 app.include_router(menu.router)
 app.include_router(websocket.router)
 app.include_router(payment_router.router)
+app.include_router(chat.router)
 
 # ML & Events
 app.include_router(food_prediction.router)

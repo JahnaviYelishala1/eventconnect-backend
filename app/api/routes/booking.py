@@ -2,6 +2,9 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from datetime import datetime
+from calendar import month_abbr
+from sqlalchemy import func
 
 from app.database import get_db
 from app.models.booking_item import BookingItem
@@ -13,6 +16,11 @@ from app.models.user import User
 from app.schemas.booking import BookingResponse, BookingCreate
 from app.utils.auth import get_current_user
 from app.websocket.manager import manager
+from sqlalchemy import func
+from datetime import datetime
+from app.models.payment import Payment
+
+
 
 router = APIRouter(prefix="/api/bookings", tags=["Bookings"])
 
@@ -351,3 +359,103 @@ async def cancel_booking(
     )
 
     return {"message": "Booking cancelled"}
+
+@router.get("/caterer/revenue")
+def get_caterer_revenue(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    db_user = db.query(User).filter(
+        User.firebase_uid == user["uid"]
+    ).first()
+
+    if not db_user or db_user.role != "caterer":
+        raise HTTPException(status_code=403, detail="Only caterers allowed")
+
+    caterer = db.query(Caterer).filter(
+        Caterer.user_id == db_user.id
+    ).first()
+
+    if not caterer:
+        raise HTTPException(status_code=404, detail="Caterer not found")
+
+    # ------------------------------------------------------
+    # Get all bookings for this caterer
+    # ------------------------------------------------------
+    bookings = db.query(EventBooking).filter(
+        EventBooking.caterer_id == caterer.id
+    ).all()
+
+    booking_ids = [b.id for b in bookings]
+
+    if not booking_ids:
+        return {
+            "total_revenue": 0,
+            "total_paid_bookings": 0,
+            "pending_bookings": 0,
+            "this_month_revenue": 0,
+            "monthly_breakdown": []
+        }
+
+    # ------------------------------------------------------
+    # Total revenue
+    # ------------------------------------------------------
+    total_revenue = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
+        Payment.booking_id.in_(booking_ids),
+        Payment.status == "paid"
+    ).scalar()
+
+    # ------------------------------------------------------
+    # Total paid bookings
+    # ------------------------------------------------------
+    total_paid = db.query(func.count(Payment.id)).filter(
+        Payment.booking_id.in_(booking_ids),
+        Payment.status == "paid"
+    ).scalar()
+
+    # ------------------------------------------------------
+    # Pending bookings
+    # ------------------------------------------------------
+    pending_count = db.query(func.count(EventBooking.id)).filter(
+        EventBooking.caterer_id == caterer.id,
+        EventBooking.status.in_(["pending", "accepted"])
+    ).scalar()
+
+    # ------------------------------------------------------
+    # This month revenue
+    # ------------------------------------------------------
+    now = datetime.utcnow()
+    first_day = datetime(now.year, now.month, 1)
+
+    this_month_revenue = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
+        Payment.booking_id.in_(booking_ids),
+        Payment.status == "paid",
+        Payment.paid_at >= first_day
+    ).scalar()
+
+    # ------------------------------------------------------
+    # Monthly breakdown
+    # ------------------------------------------------------
+    monthly_data = db.query(
+        func.date_trunc("month", Payment.paid_at).label("month"),
+        func.sum(Payment.amount)
+    ).filter(
+        Payment.booking_id.in_(booking_ids),
+        Payment.status == "paid"
+    ).group_by("month").order_by("month").all()
+
+    monthly_breakdown = [
+        {
+            "month": m.month.strftime("%Y-%m"),
+            "revenue": float(m[1])
+        }
+        for m in monthly_data
+    ]
+
+    return {
+        "total_revenue": float(total_revenue),
+        "total_paid_bookings": total_paid,
+        "pending_bookings": pending_count,
+        "this_month_revenue": float(this_month_revenue),
+        "monthly_breakdown": monthly_breakdown
+    }

@@ -1,14 +1,14 @@
 from pydantic import BaseModel
+from typing import List
+
+
+class MenuItem(BaseModel):
+    name: str
+    category: str
+
 
 class FoodPredictionRequest(BaseModel):
-    event_type: str
     attendees: int
-    duration_hours: int
-    meal_style: str
-    location_type: str
-    season: str
-
-
-class FoodPredictionResponse(BaseModel):
-    estimated_food_quantity: float
-    unit: str = "kg"
+    event_type: str
+    meal_type: str
+    items: List[MenuItem]

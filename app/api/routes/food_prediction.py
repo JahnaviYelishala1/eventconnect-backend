@@ -1,36 +1,21 @@
 from fastapi import APIRouter, Depends
-from app.schemas.food_prediction import FoodPredictionRequest, FoodPredictionResponse
-from app.ml.predictor import predict_food_quantity
-from app.utils.auth import get_current_user
+from sqlalchemy.orm import Session
 
-router = APIRouter(prefix="/api/events", tags=["Food Prediction"])
+from app.database import get_db
+from app.schemas.food_prediction import FoodPredictionRequest
+from app.services.food_predictor import predict_food_quantities
+
+router = APIRouter(prefix="/api/predict-food", tags=["Food Prediction"])
 
 
-@router.post(
-    "/predict-food",
-    response_model=FoodPredictionResponse
-)
-def predict_food(
-    data: FoodPredictionRequest,
-    user=Depends(get_current_user)
-):
-    """
-    Predict food quantity required for an event
-    """
+@router.post("/")
+def predict_food(data: FoodPredictionRequest):
 
-    # Convert request into model features
-    features = [
-        data.event_type,
-        data.attendees,
-        data.duration_hours,
-        data.meal_style,
-        data.location_type,
-        data.season
-    ]
-
-    prediction = predict_food_quantity(features)
-
-    return FoodPredictionResponse(
-        estimated_food_quantity=round(prediction, 2),
-        unit="kg"
+    result = predict_food_quantities(
+        attendees=data.attendees,
+        items=data.items,
+        event_type=data.event_type,
+        meal_type=data.meal_type
     )
+
+    return {"predictions": result}

@@ -1,10 +1,11 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 
 class MenuItem(BaseModel):
     name: str
-    category: str
+    category: Optional[str] = None
+    food_type: Optional[str] = None
 
 
 class FoodPredictionRequest(BaseModel):

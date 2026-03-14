@@ -10,7 +10,7 @@ try:
 except FileNotFoundError as exc:
     raise RuntimeError(f"Food quantity model file not found at: {MODEL_PATH}") from exc
 
-def predict_food_quantities(attendees, items, event_type, meal_type):
+def predict_food_quantities(attendees, items, meal_type):
 
     predictions = {}
 
@@ -18,13 +18,13 @@ def predict_food_quantities(attendees, items, event_type, meal_type):
 
         df = pd.DataFrame({
             "attendees": [attendees],
-            "category": [item["category"]],
-            "event_type": [event_type],
-            "meal_type": [meal_type]
+            "category": [item.category],
+            "meal_type": [meal_type],
+            "food_type": ["veg"]   
         })
 
         qty = model.predict(df)[0]
 
-        predictions[item["name"]] = round(float(qty), 2)
+        predictions[item.name] = round(float(qty), 2)
 
     return predictions

@@ -459,3 +459,58 @@ def get_caterer_revenue(
         "this_month_revenue": float(this_month_revenue),
         "monthly_breakdown": monthly_breakdown
     }
+
+# ==========================================================
+# GET BOOKING DETAILS
+# ==========================================================
+@router.get("/{booking_id}", response_model=BookingResponse)
+def get_booking_details(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+
+    booking = db.query(EventBooking).filter(
+        EventBooking.id == booking_id
+    ).first()
+
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    caterer = db.query(Caterer).filter(
+        Caterer.id == booking.caterer_id
+    ).first()
+
+    event = db.query(Event).filter(
+        Event.id == booking.event_id
+    ).first()
+
+    items_query = (
+        db.query(BookingItem, CatererMenu)
+        .join(CatererMenu, CatererMenu.id == BookingItem.menu_id)
+        .filter(BookingItem.booking_id == booking.id)
+        .all()
+    )
+
+    items_list = []
+
+    for booking_item, menu in items_query:
+        items_list.append({
+            "menu_id": menu.id,
+            "item_name": menu.item_name,
+            "quantity": booking_item.quantity,
+            "price": menu.price
+        })
+
+    return {
+        "id": booking.id,
+        "event_id": booking.event_id,
+        "caterer_id": booking.caterer_id,
+        "attendees": booking.attendees,
+        "booking_date": booking.booking_date,
+        "status": booking.status,
+        "total_price": booking.total_price,
+        "caterer_name": caterer.business_name if caterer else None,
+        "event_name": event.event_name if event else None,
+        "items": items_list
+    }

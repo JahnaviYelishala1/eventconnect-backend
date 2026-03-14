@@ -11,11 +11,10 @@ router = APIRouter(prefix="/api/predict-food", tags=["Food Prediction"])
 @router.post("/")
 def predict_food(data: FoodPredictionRequest):
 
-    result = predict_food_quantities(
+    predictions = predict_food_quantities(
         attendees=data.attendees,
         items=data.items,
-        event_type=data.event_type,
         meal_type=data.meal_type
     )
 
-    return {"predictions": result}
+    return {"predictions": predictions}

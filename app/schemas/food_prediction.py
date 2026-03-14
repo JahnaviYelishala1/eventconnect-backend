@@ -9,6 +9,5 @@ class MenuItem(BaseModel):
 
 class FoodPredictionRequest(BaseModel):
     attendees: int
-    event_type: str
     meal_type: str
     items: List[MenuItem]

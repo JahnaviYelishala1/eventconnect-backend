@@ -5,6 +5,8 @@ venv/
 # Python cache
 __pycache__/
 *.pyc
+*.pkl
+app/services/food_quantity_model.pkl
 
 # Firebase secrets
 firebase_service_account.json

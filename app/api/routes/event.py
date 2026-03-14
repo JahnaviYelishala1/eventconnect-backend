@@ -58,17 +58,21 @@ def create_event_api(
     return event
 
 
-@router.get("/my-events")
-def get_my_events(
+@router.get("/{event_id}", response_model=EventResponse)
+def get_event_by_id(
+    event_id: int,
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    return (
-        db.query(Event)
-        .filter(Event.firebase_uid == user["uid"])
-        .order_by(Event.id.desc())
-        .all()
-    )
+
+    event = db.query(Event).filter(
+        Event.id == event_id
+    ).first()
+
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    return event
 
 
 @router.patch("/{event_id}/complete")

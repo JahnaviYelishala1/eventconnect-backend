@@ -17,7 +17,7 @@ router = APIRouter()
 @router.websocket("/ws/chat/{booking_id}")
 async def chat_websocket(websocket: WebSocket, booking_id: int):
     await websocket.accept()
-    await manager.connect(booking_id, websocket)
+    await manager.connect_booking(booking_id, websocket)
 
     token = websocket.query_params.get("token")
 
@@ -61,7 +61,7 @@ async def chat_websocket(websocket: WebSocket, booking_id: int):
             await websocket.close(code=1008)
             return
 
-        await manager.connect(booking_id, websocket)
+        await manager.connect_booking(booking_id, websocket)
 
         while True:
             data = await websocket.receive_text()
@@ -78,7 +78,7 @@ async def chat_websocket(websocket: WebSocket, booking_id: int):
             db.add(chat)
             db.commit()
 
-            await manager.broadcast(
+            await manager.broadcast_booking(
                 booking_id,
                 {
                     "sender_id": db_user.id,
@@ -88,7 +88,7 @@ async def chat_websocket(websocket: WebSocket, booking_id: int):
             )
 
     except WebSocketDisconnect:
-        manager.disconnect(booking_id, websocket)
+        manager.disconnect_booking(booking_id, websocket)
 
     finally:
         db.close()

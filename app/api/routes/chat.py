@@ -20,24 +20,24 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[int, List[WebSocket]] = {}
 
-    async def connect(self, booking_id: int, websocket: WebSocket):
+    async def connect_booking(self, booking_id: int, websocket: WebSocket):
         await websocket.accept()
         if booking_id not in self.active_connections:
             self.active_connections[booking_id] = []
         self.active_connections[booking_id].append(websocket)
 
-    def disconnect(self, booking_id: int, websocket: WebSocket):
+    def disconnect_booking(self, booking_id: int, websocket: WebSocket):
         if booking_id in self.active_connections:
             if websocket in self.active_connections[booking_id]:
                 self.active_connections[booking_id].remove(websocket)
 
-    async def broadcast(self, booking_id: int, message: dict):
+    async def broadcast_booking(self, booking_id: int, message: dict):
         if booking_id in self.active_connections:
             for connection in list(self.active_connections[booking_id]):
                 try:
                     await connection.send_json(message)
                 except Exception:
-                    self.disconnect(booking_id, connection)
+                    self.disconnect_booking(booking_id, connection)
 
 
 manager = ConnectionManager()
@@ -106,7 +106,7 @@ async def chat_websocket(
 
     # ======================================================
 
-    await manager.connect(booking_id, websocket)
+    await manager.connect_booking(booking_id, websocket)
 
     try:
         while True:
@@ -134,7 +134,7 @@ async def chat_websocket(
                 db.rollback()
                 continue
 
-            await manager.broadcast(
+            await manager.broadcast_booking(
                 booking_id,
                 {
                     "sender_id": db_user.id,
@@ -144,7 +144,7 @@ async def chat_websocket(
             )
 
     except WebSocketDisconnect:
-        manager.disconnect(booking_id, websocket)
+        manager.disconnect_booking(booking_id, websocket)
 
 
 # ==========================================================

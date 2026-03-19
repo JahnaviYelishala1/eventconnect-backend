@@ -4,21 +4,24 @@ from fastapi import APIRouter, FastAPI
 from app.api.routes import (
     chat,
     health,
+    ngo_ws,
     organizer,
+    organizer_ws,
     payment as payment_router,
     preparation,
-    profile,
     protected,
+    surplus,
     user,
     food_prediction,
     event,
     menu,
-    websocket
+    websocket,
+    ngo_profile as ngo_profile_router
 )
 
 # Database
 from app.database import Base, engine
-from app.models import caterer, user as user_model
+from app.models import caterer, ngo_profile, user as user_model
 from app.models import event as event_model
 from app.core import firebase
 from app.api.routes import ngo
@@ -58,7 +61,7 @@ app.include_router(protected.router, prefix="/api")
 app.include_router(user.router, prefix="/api")
 app.include_router(ngo.router)
 app.include_router(admin.router)
-app.include_router(profile.router)
+app.include_router(ngo_profile_router.router)
 app.include_router(caterer.router)
 app.include_router(booking.router)
 app.include_router(organizer.router)
@@ -67,6 +70,9 @@ app.include_router(websocket.router)
 app.include_router(payment_router.router)
 app.include_router(chat.router)
 app.include_router(preparation.router)
+app.include_router(surplus.router)
+app.include_router(ngo_ws.router)
+app.include_router(organizer_ws.router)
 
 # ML & Events
 app.include_router(food_prediction.router)

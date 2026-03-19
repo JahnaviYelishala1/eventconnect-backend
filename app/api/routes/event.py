@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from typing import List
+
 from app.schemas.event import EventCreate, EventResponse, EventComplete
 from app.ml.predictor import predict_food_quantity
 from app.crud.event import create_event
@@ -58,21 +60,17 @@ def create_event_api(
     return event
 
 
-@router.get("/{event_id}", response_model=EventResponse)
-def get_event_by_id(
-    event_id: int,
+@router.get("/my-events", response_model=List[EventResponse])
+def get_my_events(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-
-    event = db.query(Event).filter(
-        Event.id == event_id
-    ).first()
-
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-
-    return event
+    return (
+        db.query(Event)
+        .filter(Event.firebase_uid == user["uid"])
+        .order_by(Event.id.desc())
+        .all()
+    )
 
 
 @router.patch("/{event_id}/complete")
@@ -91,34 +89,28 @@ def complete_event(
         raise HTTPException(status_code=404, detail="Event not found")
 
     surplus = data.food_prepared - data.food_consumed
+    existing_location = (
+        db.query(EventLocation)
+        .filter(EventLocation.event_id == event.id)
+        .first()
+    )
 
     # ---------------- VALIDATION ----------------
     if surplus > 0:
-        if not data.surplus_location:
+        # If no explicit surplus location is provided, reuse the event location.
+        if not data.surplus_location and not existing_location:
             raise HTTPException(
                 status_code=400,
                 detail="Surplus detected. Pickup location required."
             )
 
-        if (
+        if data.surplus_location and (
             data.surplus_location.latitude is None or
             data.surplus_location.longitude is None
         ):
             raise HTTPException(
                 status_code=400,
                 detail="Latitude and longitude are required for surplus pickup"
-            )
-
-        existing_location = (
-            db.query(EventLocation)
-            .filter(EventLocation.event_id == event.id)
-            .first()
-        )
-
-        if existing_location:
-            raise HTTPException(
-                status_code=409,
-                detail="Pickup location already exists for this event"
             )
     # --------------------------------------------
 
@@ -127,17 +119,26 @@ def complete_event(
     event.food_surplus = max(surplus, 0)
 
     if surplus > 0:
-        location = EventLocation(
-            event_id=event.id,
-            address=data.surplus_location.address,
-            city=data.surplus_location.city,
-            pincode=data.surplus_location.pincode,
-            latitude=data.surplus_location.latitude,
-            longitude=data.surplus_location.longitude,
-            location_type=data.surplus_location.location_type
-        )
-
-        db.add(location)
+        if data.surplus_location:
+            if existing_location:
+                existing_location.address = data.surplus_location.address
+                existing_location.city = data.surplus_location.city
+                existing_location.pincode = data.surplus_location.pincode
+                existing_location.latitude = data.surplus_location.latitude
+                existing_location.longitude = data.surplus_location.longitude
+                existing_location.location_type = data.surplus_location.location_type
+            else:
+                db.add(
+                    EventLocation(
+                        event_id=event.id,
+                        address=data.surplus_location.address,
+                        city=data.surplus_location.city,
+                        pincode=data.surplus_location.pincode,
+                        latitude=data.surplus_location.latitude,
+                        longitude=data.surplus_location.longitude,
+                        location_type=data.surplus_location.location_type
+                    )
+                )
         event.status = "SURPLUS_AVAILABLE"
     else:
         event.status = "COMPLETED"

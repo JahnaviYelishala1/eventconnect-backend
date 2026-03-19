@@ -1,6 +1,6 @@
 # app/models/event.py
 
-from sqlalchemy import Column, Integer, String, Float
+from sqlalchemy import Boolean, Column, Integer, String, Float
 from app.database import Base
 
 class Event(Base):
@@ -24,3 +24,4 @@ class Event(Base):
     food_consumed = Column(Float, nullable=True)
     food_surplus = Column(Float, nullable=True)
     status = Column(String, default="CREATED")
+    surplus_available = Column(Boolean, default=False)

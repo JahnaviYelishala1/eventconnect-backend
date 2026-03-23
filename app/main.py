@@ -1,4 +1,7 @@
+import logging
+
 from fastapi import APIRouter, FastAPI
+from sqlalchemy import text
 
 # Routers
 from app.api.routes import (
@@ -40,6 +43,8 @@ app = FastAPI(
     description="Backend API for EventConnect Platform"
 )
 
+logger = logging.getLogger(__name__)
+
 # ---------------- ROOT ----------------
 @app.get("/")
 def root():
@@ -53,6 +58,23 @@ event_model.Base.metadata.create_all(bind=engine)
 ngo_profile_model.Base.metadata.create_all(bind=engine)
 caterer_model.Base.metadata.create_all(bind=engine)
 payment_model.Base.metadata.create_all(bind=engine)
+
+
+def _apply_schema_hotfixes() -> None:
+    # Keep old databases compatible with request-based chat where booking_id is optional.
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "ALTER TABLE IF EXISTS chat_messages "
+                "ALTER COLUMN booking_id DROP NOT NULL"
+            )
+        )
+
+
+try:
+    _apply_schema_hotfixes()
+except Exception as exc:
+    logger.warning("Schema hotfix skipped: %s", str(exc))
 
 
 # ---------------- ROUTERS ----------------

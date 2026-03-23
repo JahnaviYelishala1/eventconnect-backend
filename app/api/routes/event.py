@@ -10,6 +10,7 @@ from app.crud.event import create_event
 from app.utils.auth import get_current_user
 from app.models.event import Event
 from app.models.event_location import EventLocation
+from app.models.event_booking import EventBooking
 
 router = APIRouter(
     prefix="/api/events",
@@ -159,11 +160,20 @@ def get_event_by_id(
     user=Depends(get_current_user)
 ):
     event = db.query(Event).filter(
-        Event.id == event_id,
-        Event.firebase_uid == user["uid"]
+        Event.id == event_id
     ).first()
 
     if not event:
+        print("EVENT NOT FOUND:", event_id)
         raise HTTPException(status_code=404, detail="Event not found")
+
+    booking = db.query(EventBooking).filter(
+        EventBooking.event_id == event_id
+    ).first()
+
+    if booking:
+        print("BOOKING EVENT ID:", booking.event_id)
+        if booking.event_id != event.id:
+            raise HTTPException(status_code=400, detail="Booking/Event mismatch")
 
     return event

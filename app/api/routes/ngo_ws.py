@@ -60,7 +60,6 @@ async def _send_open_nearby_alerts(db: Session, ngo_id: int, user_id: int):
                 "request_id": request.id,
                 "event_name": event.event_name,
                 "food_description": request.food_description,
-                "description": request.food_description,
                 "image_url": request.image_url,
                 "distance": round(distance, 2),
                 "latitude": request.latitude,
@@ -76,6 +75,8 @@ async def ngo_websocket(websocket: WebSocket, token: str | None = None):
     ngo = None
 
     try:
+        print("WS NGO TOKEN:", token)
+
         if not token:
             await websocket.close(code=1008)
             return
@@ -85,6 +86,7 @@ async def ngo_websocket(websocket: WebSocket, token: str | None = None):
             normalized_token = normalized_token.replace("Bearer ", "", 1).strip()
 
         user_data = verify_firebase_token(normalized_token)
+        print("WS NGO UID:", user_data.get("uid"))
 
         db_user = db.query(User).filter(
             User.firebase_uid == user_data["uid"]
@@ -104,6 +106,11 @@ async def ngo_websocket(websocket: WebSocket, token: str | None = None):
 
         if not ngo:
             await websocket.close()
+            return
+
+        if ngo.firebase_uid != user_data["uid"]:
+            print("NGO FIREBASE UID MISMATCH:", ngo.firebase_uid, user_data["uid"])
+            await websocket.close(code=1008)
             return
 
         await manager.connect_ngo(ngo.id, websocket)

@@ -33,6 +33,7 @@ class EventResponse(BaseModel):
     food_prepared: Optional[float]
     food_consumed: Optional[float]
     food_surplus: Optional[float]
+    surplus_request_id: Optional[int]
     status: str
 
     class Config:

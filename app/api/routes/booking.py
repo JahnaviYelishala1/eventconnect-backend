@@ -42,12 +42,17 @@ async def create_booking(
         raise HTTPException(status_code=403, detail="Only organizers allowed")
 
     event = db.query(Event).filter(
-        Event.id == data.event_id,
-        Event.firebase_uid == user["uid"]
+        Event.id == data.event_id
     ).first()
 
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
+
+    if hasattr(event, "organizer_id") and getattr(event, "organizer_id") is not None:
+        if event.organizer_id != db_user.id:
+            raise HTTPException(status_code=403, detail="Not your event")
+    elif event.firebase_uid != db_user.firebase_uid:
+        raise HTTPException(status_code=403, detail="Not your event")
 
     caterer = db.query(Caterer).filter(
         Caterer.id == data.caterer_id
@@ -57,14 +62,51 @@ async def create_booking(
         raise HTTPException(status_code=404, detail="Caterer not found")
 
     try:
+        print("BOOKING REQUEST:")
+        print("User:", db_user.id)
+        print("Event ID:", data.event_id)
+        print("Caterer ID:", data.caterer_id)
+        print("Items:", data.items)
+        print("VALIDATING MENU ITEMS...")
+        print("CATERER:", caterer.id)
+        print("ITEMS:", data.items)
+
+        invalid_items = []
+        menu_lookup = {}
+
+        for item in data.items:
+            menu = db.query(CatererMenu).filter(
+                CatererMenu.id == item.menu_id
+            ).first()
+
+            if not menu:
+                invalid_items.append(f"{item.menu_id} (not found)")
+                continue
+
+            if menu.caterer_id != caterer.id:
+                invalid_items.append(f"{item.menu_id} (wrong caterer)")
+                continue
+
+            menu_lookup[item.menu_id] = menu
+
+        if invalid_items:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid menu items: {invalid_items}"
+            )
+
         total_price = 0
+
+        booking_date = data.booking_date
+        if isinstance(booking_date, str):
+            booking_date = datetime.strptime(booking_date, "%Y-%m-%d")
 
         booking = EventBooking(
             event_id=event.id,
             caterer_id=caterer.id,
             organizer_id=db_user.id,
             attendees=data.attendees,
-            booking_date=data.booking_date,
+            booking_date=booking_date,
             status="pending"
         )
 
@@ -72,13 +114,7 @@ async def create_booking(
         db.flush()
 
         for item in data.items:
-            menu = db.query(CatererMenu).filter(
-                CatererMenu.id == item.menu_id,
-                CatererMenu.caterer_id == caterer.id
-            ).first()
-
-            if not menu:
-                raise HTTPException(status_code=404, detail="Invalid menu item")
+            menu = menu_lookup[item.menu_id]
 
             total_price += menu.price * item.quantity
 
@@ -91,6 +127,8 @@ async def create_booking(
         booking.total_price = total_price
         db.commit()
         db.refresh(booking)
+        print("BOOKING CREATED:", booking.id)
+        print("TOTAL PRICE:", total_price)
 
         # Build response manually to match BookingResponse
         items_query = (
@@ -110,15 +148,18 @@ async def create_booking(
                 "price": menu.price
             })
 
-        # Notify caterer instantly
-        await manager.send_personal_message(
-            str(caterer.user_id),
-            {
-                "type": "new_booking",
-                "booking_id": booking.id,
-                "status": booking.status
-            }
-        )
+        # Notify caterer instantly (non-blocking for booking success)
+        try:
+            await manager.send_personal_message(
+                str(caterer.user_id),
+                {
+                    "type": "new_booking",
+                    "booking_id": booking.id,
+                    "status": booking.status
+                }
+            )
+        except Exception as e:
+            print("WebSocket notification failed:", e)
 
         return {
             "id": booking.id,
@@ -133,9 +174,12 @@ async def create_booking(
             "items": items_list
         }
 
+    except HTTPException as e:
+        db.rollback()
+        raise e
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==========================================================
@@ -243,6 +287,18 @@ async def update_booking_status(
     booking.status = status
     db.commit()
 
+    # If accepted, create a pending payment record.
+    if status == "accepted":
+        payment = Payment(
+            booking_id=booking.id,
+            amount=booking.total_price,
+            status="pending",
+            stripe_payment_intent=f"pending_{booking.id}_{int(datetime.utcnow().timestamp())}",
+            currency="inr"
+        )
+        db.add(payment)
+        db.commit()
+
     await manager.send_personal_message(
         str(booking.organizer_id),
         {
@@ -253,6 +309,68 @@ async def update_booking_status(
     )
 
     return {"message": f"Booking {status}"}
+
+
+@router.post("/payments/create-session/{booking_id}")
+def create_payment_session(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    booking = db.query(EventBooking).filter(
+        EventBooking.id == booking_id
+    ).first()
+
+    if not booking:
+        raise HTTPException(404, "Booking not found")
+
+    if booking.status != "accepted":
+        raise HTTPException(400, "Booking not ready for payment")
+
+    # Dummy checkout URL; can be replaced by Stripe checkout later.
+    checkout_url = f"https://dummy-payment.com/pay/{booking_id}"
+
+    return {
+        "checkout_url": checkout_url
+    }
+
+
+@router.post("/payments/success/{booking_id}")
+async def payment_success(
+    booking_id: int,
+    db: Session = Depends(get_db)
+):
+    booking = db.query(EventBooking).filter(
+        EventBooking.id == booking_id
+    ).first()
+
+    if not booking:
+        raise HTTPException(404, "Booking not found")
+
+    booking.status = "paid"
+
+    payment = db.query(Payment).filter(
+        Payment.booking_id == booking_id
+    ).first()
+
+    if payment:
+        payment.status = "paid"
+
+    db.commit()
+
+    # Optional: notify caterer on payment received.
+    try:
+        await manager.send_personal_message(
+            str(booking.caterer.user.firebase_uid),
+            {
+                "type": "payment_received",
+                "booking_id": booking.id
+            }
+        )
+    except Exception:
+        pass
+
+    return {"message": "Payment successful"}
 
 
 # ==========================================================

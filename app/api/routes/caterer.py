@@ -124,6 +124,7 @@ def get_my_caterer_profile(
 
 
 @router.put("/profile")
+@router.put("/profile/me")
 def update_caterer_profile(
     data: CatererCreate,
     db: Session = Depends(get_db),

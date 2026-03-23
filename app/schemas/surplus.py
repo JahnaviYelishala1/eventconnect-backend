@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import Optional
+
 from pydantic import AliasChoices, BaseModel, Field
 
 
@@ -31,7 +34,7 @@ class SurplusResponse(BaseModel):
     id: int
     event_id: int
     food_description: str
-    image_url: str
+    image_url: Optional[str] = None
 
     latitude: float
     longitude: float
@@ -40,3 +43,19 @@ class SurplusResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class SurplusAcceptedResponse(BaseModel):
+    request_id: int
+    event_id: int
+    organizer_id: int
+    event_name: str
+    food_description: str
+    image_url: Optional[str]
+    latitude: float
+    longitude: float
+    status: str
+    accepted_by_ngo: Optional[int]
+    created_at: datetime
+    organizer_name: Optional[str] = None
+    organizer_phone: Optional[str] = None

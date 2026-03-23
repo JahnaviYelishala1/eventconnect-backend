@@ -1,7 +1,8 @@
-from fastapi import Header, HTTPException, Depends
+from fastapi import HTTPException, Depends, Request
 from firebase_admin import auth  # ✅ CORRECT IMPORT
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+import time
 
 from app.database import get_db
 from app.models.user import User
@@ -10,7 +11,10 @@ from app.models.user import User
 # 🔐 Verify Firebase Token
 def verify_firebase_token(token: str):
     try:
-        decoded_token = auth.verify_id_token(token)
+        decoded_token = auth.verify_id_token(
+            token,
+            clock_skew_seconds=60
+        )
         return decoded_token
     except Exception:
         raise HTTPException(
@@ -59,31 +63,27 @@ def ensure_db_user(decoded: dict, db: Session) -> User:
 
 # 🔑 Dependency for Protected Routes
 def get_current_user(
-    authorization: str | None = Header(default=None),
+    request: Request,
     db: Session = Depends(get_db)
 ):
-    if not authorization:
-        raise HTTPException(
-            status_code=401,
-            detail="Authorization header missing"
+    print("AUTH HEADER:", request.headers.get("Authorization"))
+
+    auth_header = request.headers.get("Authorization")
+
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid auth header")
+
+    token = auth_header.split(" ")[1]
+
+    try:
+        decoded_token = auth.verify_id_token(
+            token,
+            clock_skew_seconds=60
         )
+        print("SERVER TIME:", int(time.time()))
+        print("TOKEN IAT:", decoded_token.get("iat"))
+    except Exception as e:
+        print("TOKEN ERROR:", e)
+        raise HTTPException(status_code=401, detail="Invalid Firebase token")
 
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid Authorization header"
-        )
-
-    token = authorization.replace("Bearer ", "").strip()
-
-    decoded = verify_firebase_token(token)
-    db_user = ensure_db_user(decoded, db)
-
-    return {
-        "id": db_user.id,
-        "uid": db_user.firebase_uid,
-        "email": db_user.email,
-        "role": db_user.role,
-        "name": db_user.name,
-        "phone": db_user.phone
-    }
+    return decoded_token

@@ -1,9 +1,14 @@
+import logging
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.ngo import NGO
 from app.models.ngo_document import NGODocument
+from app.models.ngo_profile import NGOProfile
+from app.models.user import User
 from app.schemas.ngo import NGOCreate
 from app.schemas.ngo_document import NGODocumentCreate
 from app.utils.auth import get_current_user
@@ -12,10 +17,24 @@ from app.utils.image_upload import upload_ngo_image
 from app.core.cloudinary_config import cloudinary
 import cloudinary.uploader
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(
     prefix="/api/ngos",
     tags=["NGO"]
 )
+
+
+class NgoProfilePayload(BaseModel):
+    name: str | None = None
+    established_year: str | None = None
+    about: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    image_url: str | None = None
 
 # -----------------------------
 # REGISTER NGO
@@ -48,6 +67,60 @@ def register_ngo(
     db.refresh(ngo)
 
     return {"message": "NGO registered successfully"}
+
+
+@router.get("/profile")
+def get_ngo_profile(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    logger.info("GET /api/ngos/profile hit uid=%s", user.get("uid"))
+
+    db_user = db.query(User).filter(User.firebase_uid == user["uid"]).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    profile = db.query(NGOProfile).filter(NGOProfile.user_id == db_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="NGO profile not found")
+
+    return {
+        "name": profile.name,
+        "established_year": profile.established_year,
+        "about": profile.about,
+        "email": profile.email,
+        "phone": profile.phone,
+        "address": profile.address,
+        "latitude": profile.latitude,
+        "longitude": profile.longitude,
+        "image_url": profile.image_url,
+    }
+
+
+@router.put("/profile")
+def update_ngo_profile(
+    payload: NgoProfilePayload,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    logger.info("PUT /api/ngos/profile hit uid=%s", user.get("uid"))
+
+    db_user = db.query(User).filter(User.firebase_uid == user["uid"]).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    profile = db.query(NGOProfile).filter(NGOProfile.user_id == db_user.id).first()
+    if not profile:
+        profile = NGOProfile(user_id=db_user.id)
+        db.add(profile)
+
+    for key, value in payload.dict(exclude_unset=True).items():
+        setattr(profile, key, value)
+
+    db.commit()
+    db.refresh(profile)
+
+    return {"message": "NGO profile updated successfully"}
 
 # -----------------------------
 # UPLOAD DOCUMENT

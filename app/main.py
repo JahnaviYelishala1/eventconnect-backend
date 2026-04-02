@@ -5,6 +5,7 @@ from sqlalchemy import text
 
 # Routers
 from app.api.routes import (
+    auth,
     chat,
     health,
     ngo_ws,
@@ -69,6 +70,24 @@ def _apply_schema_hotfixes() -> None:
                 "ALTER COLUMN booking_id DROP NOT NULL"
             )
         )
+        conn.execute(
+            text(
+                "ALTER TABLE IF EXISTS users "
+                "ADD COLUMN IF NOT EXISTS password_hash VARCHAR"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE IF EXISTS users "
+                "ADD COLUMN IF NOT EXISTS reset_token VARCHAR"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE IF EXISTS users "
+                "ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP"
+            )
+        )
 
 
 try:
@@ -79,6 +98,7 @@ except Exception as exc:
 
 # ---------------- ROUTERS ----------------
 app.include_router(health.router, prefix="/api")
+app.include_router(auth.router)
 app.include_router(protected.router, prefix="/api")
 app.include_router(user.router, prefix="/api")
 app.include_router(ngo.router)
@@ -99,5 +119,10 @@ app.include_router(organizer_ws.router)
 # ML & Events
 app.include_router(food_prediction.router)
 app.include_router(event.router)
+
+logger.info("NGO router loaded")
+for route in app.routes:
+    methods = getattr(route, "methods", None)
+    print(route.path, methods)
 
 event_location_model.Base.metadata.create_all(bind=engine)

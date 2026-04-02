@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel
 from typing import List, Optional
@@ -11,7 +11,7 @@ class BookingCreate(BaseModel):
     event_id: int
     caterer_id: int
     items: List[BookingItemCreate]
-    attendees: int          # ✅ NEW
+    attendees: int         
     booking_date: date
 
 class BookingItemDetail(BaseModel):
@@ -29,6 +29,7 @@ class BookingResponse(BaseModel):
     total_price: float
     attendees: int
     booking_date: date
+    created_at: datetime
 
     caterer_name: Optional[str] = None
     event_name: Optional[str] = None

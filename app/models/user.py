@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy import Column, DateTime, Integer, String, Text
 from app.database import Base
 
 class User(Base):
@@ -14,5 +14,9 @@ class User(Base):
 
     role = Column(String, nullable=False, default="UNASSIGNED")
     # UNASSIGNED | event_organizer | caterer | ngo
+
+    password_hash = Column(String, nullable=True)
+    reset_token = Column(String, nullable=True, index=True)
+    reset_token_expiry = Column(DateTime, nullable=True)
 
     fcm_token = Column(Text, nullable=True)  # Firebase Cloud Messaging token for push notifications

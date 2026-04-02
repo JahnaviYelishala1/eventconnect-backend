@@ -19,10 +19,32 @@ from app.websocket.manager import manager
 from sqlalchemy import func
 from datetime import datetime
 from app.models.payment import Payment
+from collections import defaultdict
 
 
 
 router = APIRouter(prefix="/api/bookings", tags=["Bookings"])
+
+
+def _build_booking_response(
+    booking,
+    caterer_name,
+    event_name,
+    items_list,
+):
+    return {
+        "id": booking.id,
+        "event_id": booking.event_id,
+        "caterer_id": booking.caterer_id,
+        "attendees": booking.attendees,
+        "booking_date": booking.booking_date,
+        "created_at": booking.created_at,
+        "status": booking.status,
+        "total_price": booking.total_price,
+        "caterer_name": caterer_name,
+        "event_name": event_name,
+        "items": items_list,
+    }
 
 
 # ==========================================================
@@ -107,6 +129,7 @@ async def create_booking(
             organizer_id=db_user.id,
             attendees=data.attendees,
             booking_date=booking_date,
+            created_at=datetime.utcnow(),
             status="pending"
         )
 
@@ -167,6 +190,7 @@ async def create_booking(
             "caterer_id": booking.caterer_id,
             "attendees": booking.attendees,
             "booking_date": booking.booking_date,
+            "created_at": booking.created_at,
             "status": booking.status,
             "total_price": booking.total_price,
             "caterer_name": caterer.business_name,
@@ -208,43 +232,45 @@ def get_caterer_bookings(
         EventBooking.caterer_id == caterer.id
     ).order_by(EventBooking.created_at.desc()).all()
 
+    if not bookings:
+        return []
+
+    booking_ids = [booking.id for booking in bookings]
+    event_ids = list({booking.event_id for booking in bookings})
+
+    events = {
+        event.id: event
+        for event in db.query(Event).filter(Event.id.in_(event_ids)).all()
+    }
+
+    booking_items = (
+        db.query(BookingItem, CatererMenu)
+        .join(CatererMenu, CatererMenu.id == BookingItem.menu_id)
+        .filter(BookingItem.booking_id.in_(booking_ids))
+        .all()
+    )
+
+    items_by_booking = defaultdict(list)
+
+    for booking_item, menu in booking_items:
+        items_by_booking[booking_item.booking_id].append({
+            "menu_id": menu.id,
+            "item_name": menu.item_name,
+            "quantity": booking_item.quantity,
+            "price": menu.price,
+        })
+
     result = []
 
     for booking in bookings:
+        event = events.get(booking.event_id)
 
-        event = db.query(Event).filter(
-            Event.id == booking.event_id
-        ).first()
-
-        items_query = (
-            db.query(BookingItem, CatererMenu)
-            .join(CatererMenu, CatererMenu.id == BookingItem.menu_id)
-            .filter(BookingItem.booking_id == booking.id)
-            .all()
-        )
-
-        items_list = []
-
-        for booking_item, menu in items_query:
-            items_list.append({
-                "menu_id": menu.id,
-                "item_name": menu.item_name,
-                "quantity": booking_item.quantity,
-                "price": menu.price
-            })
-
-        result.append({
-            "id": booking.id,
-            "event_id": booking.event_id,
-            "caterer_id": booking.caterer_id,
-            "attendees": booking.attendees,
-            "booking_date": booking.booking_date,
-            "status": booking.status,
-            "total_price": booking.total_price,
-            "caterer_name": caterer.business_name,
-            "event_name": event.event_name if event else None,
-            "items": items_list
-        })
+        result.append(_build_booking_response(
+            booking,
+            caterer.business_name,
+            event.event_name if event else None,
+            items_by_booking.get(booking.id, []),
+        ))
 
     return result
 
@@ -392,47 +418,52 @@ def get_organizer_bookings(
         EventBooking.organizer_id == db_user.id
     ).order_by(EventBooking.created_at.desc()).all()
 
+    if not bookings:
+        return []
+
+    booking_ids = [booking.id for booking in bookings]
+    caterer_ids = list({booking.caterer_id for booking in bookings})
+    event_ids = list({booking.event_id for booking in bookings})
+
+    caterers = {
+        caterer.id: caterer
+        for caterer in db.query(Caterer).filter(Caterer.id.in_(caterer_ids)).all()
+    }
+
+    events = {
+        event.id: event
+        for event in db.query(Event).filter(Event.id.in_(event_ids)).all()
+    }
+
+    booking_items = (
+        db.query(BookingItem, CatererMenu)
+        .join(CatererMenu, CatererMenu.id == BookingItem.menu_id)
+        .filter(BookingItem.booking_id.in_(booking_ids))
+        .all()
+    )
+
+    items_by_booking = defaultdict(list)
+
+    for booking_item, menu in booking_items:
+        items_by_booking[booking_item.booking_id].append({
+            "menu_id": menu.id,
+            "item_name": menu.item_name,
+            "quantity": booking_item.quantity,
+            "price": menu.price,
+        })
+
     result = []
 
     for booking in bookings:
+        caterer = caterers.get(booking.caterer_id)
+        event = events.get(booking.event_id)
 
-        caterer = db.query(Caterer).filter(
-            Caterer.id == booking.caterer_id
-        ).first()
-
-        event = db.query(Event).filter(
-            Event.id == booking.event_id
-        ).first()
-
-        items_query = (
-            db.query(BookingItem, CatererMenu)
-            .join(CatererMenu, CatererMenu.id == BookingItem.menu_id)
-            .filter(BookingItem.booking_id == booking.id)
-            .all()
-        )
-
-        items_list = []
-
-        for booking_item, menu in items_query:
-            items_list.append({
-                "menu_id": menu.id,
-                "item_name": menu.item_name,
-                "quantity": booking_item.quantity,
-                "price": menu.price
-            })
-
-        result.append({
-            "id": booking.id,
-            "event_id": booking.event_id,
-            "caterer_id": booking.caterer_id,
-            "attendees": booking.attendees,
-            "booking_date": booking.booking_date,
-            "status": booking.status,
-            "total_price": booking.total_price,
-            "caterer_name": caterer.business_name if caterer else None,
-            "event_name": event.event_name if event else None,
-            "items": items_list
-        })
+        result.append(_build_booking_response(
+            booking,
+            caterer.business_name if caterer else None,
+            event.event_name if event else None,
+            items_by_booking.get(booking.id, []),
+        ))
 
     return result
 
@@ -626,6 +657,7 @@ def get_booking_details(
         "caterer_id": booking.caterer_id,
         "attendees": booking.attendees,
         "booking_date": booking.booking_date,
+        "created_at": booking.created_at,
         "status": booking.status,
         "total_price": booking.total_price,
         "caterer_name": caterer.business_name if caterer else None,

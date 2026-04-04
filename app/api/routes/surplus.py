@@ -55,17 +55,14 @@ async def send_surplus_alert(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "event_organizer":
         raise HTTPException(status_code=403, detail="Only organizers allowed")
 
     event = db.query(Event).filter(
         Event.id == data.event_id,
-        Event.firebase_uid == user["uid"]
+        Event.firebase_uid == user.firebase_uid
     ).first()
 
     if not event:
@@ -272,16 +269,13 @@ async def accept_surplus(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "ngo":
         raise HTTPException(status_code=403, detail="Only NGOs allowed")
 
     ngo = db.query(NGO).filter(
-        NGO.firebase_uid == user["uid"]
+        NGO.firebase_uid == user.firebase_uid
     ).first()
 
     if not ngo:
@@ -371,15 +365,13 @@ async def reject_surplus(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "ngo":
         raise HTTPException(status_code=403, detail="Only NGOs allowed")
 
     ngo = db.query(NGO).filter(
-        NGO.firebase_uid == user["uid"]
+        NGO.firebase_uid == user.firebase_uid
     ).first()
 
     request = db.query(SurplusRequest).filter(
@@ -404,15 +396,13 @@ def get_my_accepted_requests(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "ngo":
         raise HTTPException(status_code=403, detail="Only NGOs allowed")
 
     ngo = db.query(NGO).filter(
-        NGO.firebase_uid == user["uid"]
+        NGO.firebase_uid == user.firebase_uid
     ).first()
 
     if not ngo:

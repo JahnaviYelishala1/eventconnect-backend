@@ -497,12 +497,7 @@ def get_chat_history(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
-
-    if not db_user:
-        raise HTTPException(status_code=403, detail="Unauthorized")
+    db_user = user
 
     booking = db.query(EventBooking).filter(
         EventBooking.id == room_id

@@ -332,20 +332,17 @@ def get_caterer_payment_history(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "caterer":
-        raise HTTPException(status_code=403, detail="Only caterers allowed")
+        return []
 
     caterer = db.query(Caterer).filter(
         Caterer.user_id == db_user.id
     ).first()
 
     if not caterer:
-        raise HTTPException(status_code=404, detail="Caterer not found")
+        return []
 
     payments = (
         db.query(Payment, EventBooking)
@@ -380,10 +377,7 @@ def refund_payment(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user:
         raise HTTPException(status_code=403, detail="Unauthorized")

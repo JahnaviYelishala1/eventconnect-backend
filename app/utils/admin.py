@@ -1,9 +1,10 @@
 from fastapi import HTTPException
 
-ADMIN_EMAILS = ["231210128@nitdelhi.ac.in"]
+from app.models.user import User
 
-def admin_only(user: dict):
-    if user.get("role") != "admin":
+
+def admin_only(user: User):
+    if (user.role or "").upper() != "ADMIN":
         raise HTTPException(
             status_code=403,
             detail="Admin access required"

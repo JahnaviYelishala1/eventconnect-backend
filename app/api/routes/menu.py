@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from fastapi import File, UploadFile
+import asyncio
 import cloudinary.uploader
 
 from app.database import get_db
-from app.models.user import User
 from app.models.caterer import Caterer
 from app.models.caterer_menu import CatererMenu
 from app.schemas.menu import MenuCreate, MenuResponse
@@ -13,26 +13,29 @@ from app.utils.auth import get_current_user
 
 router = APIRouter(prefix="/api/menus", tags=["Menus"])
 
+
+def _get_caterer_for_user(db: Session, user_id: int) -> Caterer:
+    caterer = db.query(Caterer).filter(
+        Caterer.user_id == user_id
+    ).first()
+
+    if not caterer:
+        raise HTTPException(404, "Create profile first")
+
+    return caterer
+
 @router.post("/", response_model=MenuResponse)
 def create_menu(
     data: MenuCreate,
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "caterer":
         raise HTTPException(403, "Only caterers allowed")
 
-    caterer = db.query(Caterer).filter(
-        Caterer.user_id == db_user.id
-    ).first()
-
-    if not caterer:
-        raise HTTPException(404, "Create profile first")
-
+    caterer = _get_caterer_for_user(db, db_user.id)
     menu = CatererMenu(
         caterer_id=caterer.id,
         item_name=data.item_name,
@@ -54,17 +57,14 @@ def get_my_menu(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "caterer":
-        raise HTTPException(403, "Only caterers allowed")
+        return []
 
-    caterer = db.query(Caterer).filter(
-        Caterer.user_id == db_user.id
-    ).first()
+    caterer = db.query(Caterer).filter(Caterer.user_id == db_user.id).first()
+    if not caterer:
+        return []
 
     return db.query(CatererMenu).filter(
         CatererMenu.caterer_id == caterer.id
@@ -84,17 +84,12 @@ def update_menu(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "caterer":
         raise HTTPException(403, "Only caterers allowed")
 
-    caterer = db.query(Caterer).filter(
-        Caterer.user_id == db_user.id
-    ).first()
+    caterer = _get_caterer_for_user(db, db_user.id)
 
     menu = db.query(CatererMenu).filter(
         CatererMenu.id == menu_id,
@@ -121,17 +116,12 @@ def delete_menu(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "caterer":
         raise HTTPException(403, "Only caterers allowed")
 
-    caterer = db.query(Caterer).filter(
-        Caterer.user_id == db_user.id
-    ).first()
+    caterer = _get_caterer_for_user(db, db_user.id)
 
     menu = db.query(CatererMenu).filter(
         CatererMenu.id == menu_id,
@@ -151,20 +141,29 @@ async def upload_menu_image(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "caterer":
         raise HTTPException(403, "Only caterers allowed")
 
-    result = cloudinary.uploader.upload(
-        file.file,
-        folder="menu_images",
-        resource_type="image"
-    )
+    try:
+        await file.seek(0)
+        loop = asyncio.get_running_loop()
 
-    return {
-        "image_url": result.get("secure_url"),
-        "message": "Menu image uploaded successfully"
-    }
+        result = await loop.run_in_executor(
+            None,
+            lambda: cloudinary.uploader.upload(
+                file.file,
+                folder="menu_images",
+                resource_type="image"
+            )
+        )
+
+        return {
+            "image_url": result.get("secure_url"),
+            "message": "Menu image uploaded successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await file.close()

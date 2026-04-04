@@ -60,15 +60,18 @@ async def notifications_websocket(
     db: Session = SessionLocal()
     connection_id = None
     connection_type = None
+    personal_user_id: int | None = None
 
     try:
-        if token:
-            normalized_token = token.strip()
+        # Support token via query param injection, raw query params, or Authorization header.
+        token_value = token or websocket.query_params.get("token") or websocket.headers.get("authorization")
+        if token_value:
+            normalized_token = token_value.strip()
             if normalized_token.startswith("Bearer "):
                 normalized_token = normalized_token.replace("Bearer ", "", 1).strip()
 
             user_data = verify_firebase_token(normalized_token)
-            if user_data["uid"] != firebase_uid:
+            if user_data.get("uid") != firebase_uid:
                 await websocket.close(code=1008)
                 return
 
@@ -79,6 +82,8 @@ async def notifications_websocket(
         if not db_user:
             await websocket.close(code=1008)
             return
+
+        personal_user_id = db_user.id
 
         if db_user.role == "event_organizer":
             connection_id = db_user.id
@@ -96,9 +101,14 @@ async def notifications_websocket(
             connection_id = ngo.id
             connection_type = "ngo"
             await manager.connect_ngo(connection_id, websocket)
+            # Allow direct/personal notifications via DB user id too.
+            manager.active_connections[str(personal_user_id)] = websocket
         else:
-            await websocket.close(code=1008)
-            return
+            # Allow caterers and unassigned users to connect for personal notifications.
+            connection_id = personal_user_id
+            connection_type = "personal"
+            await websocket.accept()
+            manager.active_connections[str(personal_user_id)] = websocket
 
         while True:
             await websocket.receive_text()
@@ -110,5 +120,9 @@ async def notifications_websocket(
             manager.disconnect_organizer(connection_id)
         elif connection_id is not None and connection_type == "ngo":
             manager.disconnect_ngo(connection_id)
+            if personal_user_id is not None:
+                manager.active_connections.pop(str(personal_user_id), None)
+        elif connection_id is not None and connection_type == "personal":
+            manager.active_connections.pop(str(connection_id), None)
     finally:
         db.close()

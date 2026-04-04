@@ -66,8 +66,6 @@ def get_current_user(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    print("AUTH HEADER:", request.headers.get("Authorization"))
-
     auth_header = request.headers.get("Authorization")
 
     if not auth_header or not auth_header.startswith("Bearer "):
@@ -80,10 +78,9 @@ def get_current_user(
             token,
             clock_skew_seconds=60
         )
-        print("SERVER TIME:", int(time.time()))
-        print("TOKEN IAT:", decoded_token.get("iat"))
-    except Exception as e:
-        print("TOKEN ERROR:", e)
+    except Exception:
         raise HTTPException(status_code=401, detail="Invalid Firebase token")
 
-    return decoded_token
+    # Ensure a corresponding DB user exists (creates/links by firebase_uid/email if needed).
+    db_user = ensure_db_user(decoded_token, db)
+    return db_user

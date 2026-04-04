@@ -16,9 +16,7 @@ def create_profile(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "event_organizer":
         raise HTTPException(403, "Only organizers allowed")
@@ -49,9 +47,7 @@ def get_profile(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "event_organizer":
         raise HTTPException(403, "Not authorized")
@@ -72,9 +68,7 @@ def update_profile(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "event_organizer":
         raise HTTPException(403, "Not authorized")
@@ -106,10 +100,7 @@ async def upload_organizer_image(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "event_organizer":
         raise HTTPException(403, "Only organizers allowed")

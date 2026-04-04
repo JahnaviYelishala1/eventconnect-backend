@@ -38,7 +38,7 @@ def create_event_api(
 
     event = create_event(
         db=db,
-        firebase_uid=user["uid"],
+        firebase_uid=user.firebase_uid,
         data=data,
         estimated_food_quantity=predicted_food
     )
@@ -68,7 +68,7 @@ def get_my_events(
 ):
     return (
         db.query(Event)
-        .filter(Event.firebase_uid == user["uid"])
+        .filter(Event.firebase_uid == user.firebase_uid)
         .order_by(Event.id.desc())
         .all()
     )
@@ -83,7 +83,7 @@ def complete_event(
 ):
     event = db.query(Event).filter(
         Event.id == event_id,
-        Event.firebase_uid == user["uid"]
+        Event.firebase_uid == user.firebase_uid
     ).first()
 
     if not event:

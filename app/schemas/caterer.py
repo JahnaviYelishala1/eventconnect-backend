@@ -43,7 +43,7 @@ class CatererResponse(BaseModel):
 
 
 class CatererProfileResponse(BaseModel):
-    id: int
+    id: Optional[int]
     business_name: str
     city: str
     min_capacity: int

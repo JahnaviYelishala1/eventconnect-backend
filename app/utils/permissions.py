@@ -4,7 +4,7 @@ from app.utils.auth import get_current_user
 
 def require_role(required_role: str):
     def checker(user = Depends(get_current_user)):
-        if user["role"] != required_role:
+        if user.role != required_role:
             raise HTTPException(
                 status_code=403,
                 detail="Access denied"
@@ -14,7 +14,7 @@ def require_role(required_role: str):
 
 
 def require_assigned_role(user = Depends(get_current_user)):
-    if user["role"] == "UNASSIGNED":
+    if user.role == "UNASSIGNED":
         raise HTTPException(
             status_code=403,
             detail="Please select a role first"

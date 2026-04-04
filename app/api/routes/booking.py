@@ -56,9 +56,7 @@ async def create_booking(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "event_organizer":
         raise HTTPException(status_code=403, detail="Only organizers allowed")
@@ -214,19 +212,17 @@ def get_caterer_bookings(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "caterer":
-        raise HTTPException(status_code=403, detail="Only caterers allowed")
+        return []
 
     caterer = db.query(Caterer).filter(
         Caterer.user_id == db_user.id
     ).first()
 
     if not caterer:
-        raise HTTPException(status_code=404, detail="Caterer not found")
+        return []
 
     bookings = db.query(EventBooking).filter(
         EventBooking.caterer_id == caterer.id
@@ -288,9 +284,7 @@ async def update_booking_status(
     if status not in ["accepted", "rejected"]:
         raise HTTPException(status_code=400, detail="Invalid status")
 
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "caterer":
         raise HTTPException(status_code=403, detail="Only caterers allowed")
@@ -387,7 +381,7 @@ async def payment_success(
     # Optional: notify caterer on payment received.
     try:
         await manager.send_personal_message(
-            str(booking.caterer.user.firebase_uid),
+            str(booking.caterer.user_id),
             {
                 "type": "payment_received",
                 "booking_id": booking.id
@@ -407,9 +401,7 @@ def get_organizer_bookings(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "event_organizer":
         raise HTTPException(status_code=403, detail="Only organizers allowed")
@@ -477,9 +469,7 @@ async def cancel_booking(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "event_organizer":
         raise HTTPException(status_code=403, detail="Only organizers allowed")
@@ -514,9 +504,7 @@ def get_caterer_revenue(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "caterer":
         raise HTTPException(status_code=403, detail="Only caterers allowed")

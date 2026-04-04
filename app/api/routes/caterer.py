@@ -15,7 +15,26 @@ import cloudinary.uploader
 
 router = APIRouter(prefix="/api/caterers", tags=["Caterers"])
 
-MAX_DISTANCE_KM = 30
+MAX_DISTANCE_KM = 50
+
+
+def _empty_caterer_profile() -> dict:
+    return {
+        "id": None,
+        "business_name": "",
+        "city": "",
+        "min_capacity": 0,
+        "max_capacity": 0,
+        "price_per_plate": 0,
+        "veg_supported": True,
+        "nonveg_supported": False,
+        "rating": 0,
+        "latitude": None,
+        "longitude": None,
+        "image_url": None,
+        "services": [],
+        "meal_styles": [],
+    }
 
 
 # =====================================================
@@ -28,9 +47,7 @@ def create_caterer_profile(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "caterer":
         raise HTTPException(403, "Only caterers allowed")
@@ -86,19 +103,20 @@ def get_my_caterer_profile(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
-    if not db_user or db_user.role != "caterer":
-        raise HTTPException(403, "Not authorized")
+    if not db_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    if db_user.role != "caterer":
+        raise HTTPException(status_code=403, detail="Only caterers allowed")
 
     caterer = db.query(Caterer).filter(
         Caterer.user_id == db_user.id
     ).first()
 
     if not caterer:
-        raise HTTPException(404, "Profile not created yet")
+        raise HTTPException(status_code=404, detail="Profile not found")
 
     return {
     "id": caterer.id,
@@ -133,10 +151,7 @@ def update_caterer_profile(
     """
     Frontend can call PUT /api/caterers/profile
     """
-
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "caterer":
         raise HTTPException(403, "Not authorized")
@@ -199,9 +214,7 @@ async def upload_caterer_image(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user or db_user.role != "caterer":
         raise HTTPException(403, "Only caterers allowed")
@@ -246,7 +259,7 @@ def match_caterers(
 
     event = db.query(Event).filter(
         Event.id == event_id,
-        Event.firebase_uid == user["uid"]
+        Event.firebase_uid == user.firebase_uid
     ).first()
 
     if not event:

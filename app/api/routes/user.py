@@ -25,14 +25,7 @@ def select_role(
     if role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
 
-    db_user = db.query(User).filter(
-        User.firebase_uid == current_user["uid"]
-    ).first()
-
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    db_user.role = role
+    current_user.role = role
     db.commit()
 
     return {"message": "Role updated", "role": role}
@@ -44,14 +37,7 @@ def save_fcm_token(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == current_user["uid"]
-    ).first()
-
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    db_user.fcm_token = request.token
+    current_user.fcm_token = request.token
     db.commit()
 
     return {"message": "FCM token saved"}
@@ -63,14 +49,7 @@ def save_fcm_token_simple(
     db: Session = Depends(get_db),
     user = Depends(get_current_user)
 ):
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
-
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    db_user.fcm_token = request.token
+    user.fcm_token = request.token
     db.commit()
 
     return {"message": "FCM token saved"}

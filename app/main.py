@@ -19,8 +19,7 @@ from app.api.routes import (
     food_prediction,
     event,
     menu,
-    websocket,
-    ngo_profile as ngo_profile_router
+    websocket
 )
 
 # Database
@@ -89,6 +88,21 @@ def _apply_schema_hotfixes() -> None:
             )
         )
 
+        # Ensure role exists for role-based authorization.
+        conn.execute(
+            text(
+                "ALTER TABLE IF EXISTS users "
+                "ADD COLUMN IF NOT EXISTS role VARCHAR"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE users "
+                "SET role = 'UNASSIGNED' "
+                "WHERE role IS NULL"
+            )
+        )
+
 
 try:
     _apply_schema_hotfixes()
@@ -103,7 +117,6 @@ app.include_router(protected.router, prefix="/api")
 app.include_router(user.router, prefix="/api")
 app.include_router(ngo.router)
 app.include_router(admin.router)
-app.include_router(ngo_profile_router.router)
 app.include_router(caterer.router)
 app.include_router(booking.router)
 app.include_router(organizer.router)

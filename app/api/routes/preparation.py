@@ -33,8 +33,6 @@ def update_preparation_status(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
-    print("USER UID:", user["uid"])
-
     new_status = payload.status if payload else status
     if not new_status:
         raise HTTPException(status_code=400, detail="Status is required")
@@ -49,14 +47,10 @@ def update_preparation_status(
     if new_status not in PREPARATION_STAGES:
         raise HTTPException(status_code=400, detail="Invalid stage")
 
-    db_user = db.query(User).filter(
-        User.firebase_uid == user["uid"]
-    ).first()
+    db_user = user
 
     if not db_user:
         raise HTTPException(status_code=403, detail="Forbidden")
-
-    print("DB USER ID:", db_user.id)
 
     caterer = db.query(Caterer).filter(
         Caterer.user_id == db_user.id

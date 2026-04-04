@@ -36,54 +36,8 @@ class NgoProfilePayload(BaseModel):
     longitude: float | None = None
     image_url: str | None = None
 
-# -----------------------------
-# REGISTER NGO
-# -----------------------------
-@router.post("/register")
-def register_ngo(
-    data: NGOCreate,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
-):
-    existing = db.query(NGO).filter(
-        NGO.firebase_uid == user["uid"]
-    ).first()
 
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail="NGO already registered"
-        )
-
-    ngo = NGO(
-        firebase_uid=user["uid"],
-        name=data.name,
-        registration_number=data.registration_number,
-        status="PENDING"
-    )
-
-    db.add(ngo)
-    db.commit()
-    db.refresh(ngo)
-
-    return {"message": "NGO registered successfully"}
-
-
-@router.get("/profile")
-def get_ngo_profile(
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
-):
-    logger.info("GET /api/ngos/profile hit uid=%s", user.get("uid"))
-
-    db_user = db.query(User).filter(User.firebase_uid == user["uid"]).first()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    profile = db.query(NGOProfile).filter(NGOProfile.user_id == db_user.id).first()
-    if not profile:
-        raise HTTPException(status_code=404, detail="NGO profile not found")
-
+def _serialize_profile(profile: NGOProfile) -> dict:
     return {
         "name": profile.name,
         "established_year": profile.established_year,
@@ -97,21 +51,27 @@ def get_ngo_profile(
     }
 
 
-@router.put("/profile")
-def update_ngo_profile(
+@router.get("/profile")
+def get_ngo_profile(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    profile = db.query(NGOProfile).filter(NGOProfile.user_id == user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="NGO profile not found")
+
+    return _serialize_profile(profile)
+
+
+@router.post("/profile")
+def create_ngo_profile(
     payload: NgoProfilePayload,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user)
+    user=Depends(get_current_user),
 ):
-    logger.info("PUT /api/ngos/profile hit uid=%s", user.get("uid"))
-
-    db_user = db.query(User).filter(User.firebase_uid == user["uid"]).first()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    profile = db.query(NGOProfile).filter(NGOProfile.user_id == db_user.id).first()
+    profile = db.query(NGOProfile).filter(NGOProfile.user_id == user.id).first()
     if not profile:
-        profile = NGOProfile(user_id=db_user.id)
+        profile = NGOProfile(user_id=user.id)
         db.add(profile)
 
     for key, value in payload.dict(exclude_unset=True).items():
@@ -119,8 +79,58 @@ def update_ngo_profile(
 
     db.commit()
     db.refresh(profile)
+    return _serialize_profile(profile)
 
-    return {"message": "NGO profile updated successfully"}
+
+@router.put("/profile")
+def update_ngo_profile(
+    payload: NgoProfilePayload,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    profile = db.query(NGOProfile).filter(NGOProfile.user_id == user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="NGO profile not found")
+
+    for key, value in payload.dict(exclude_unset=True).items():
+        setattr(profile, key, value)
+
+    db.commit()
+    db.refresh(profile)
+    return _serialize_profile(profile)
+
+
+# -----------------------------
+# REGISTER NGO
+# -----------------------------
+@router.post("/register")
+def register_ngo(
+    data: NGOCreate,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    existing = db.query(NGO).filter(
+        NGO.firebase_uid == user.firebase_uid
+    ).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="NGO already registered"
+        )
+
+    ngo = NGO(
+        firebase_uid=user.firebase_uid,
+        name=data.name,
+        registration_number=data.registration_number,
+        status="PENDING"
+    )
+
+    db.add(ngo)
+    db.commit()
+    db.refresh(ngo)
+
+    return {"message": "NGO registered successfully"}
 
 # -----------------------------
 # UPLOAD DOCUMENT
@@ -132,7 +142,7 @@ def upload_ngo_document(
     user=Depends(get_current_user)
 ):
     ngo = db.query(NGO).filter(
-        NGO.firebase_uid == user["uid"]
+        NGO.firebase_uid == user.firebase_uid
     ).first()
 
     if not ngo:
@@ -156,7 +166,7 @@ def get_my_ngo(
     user=Depends(get_current_user)
 ):
     ngo = db.query(NGO).filter(
-        NGO.firebase_uid == user["uid"]
+        NGO.firebase_uid == user.firebase_uid
     ).first()
 
     if not ngo:
@@ -182,7 +192,7 @@ def get_document_status(
     user=Depends(get_current_user)
 ):
     ngo = db.query(NGO).filter(
-        NGO.firebase_uid == user["uid"]
+        NGO.firebase_uid == user.firebase_uid
     ).first()
 
     if not ngo:
@@ -202,7 +212,7 @@ def get_my_ngo_documents(
     user=Depends(get_current_user)
 ):
     ngo = db.query(NGO).filter(
-        NGO.firebase_uid == user["uid"]
+        NGO.firebase_uid == user.firebase_uid
     ).first()
 
     if not ngo:

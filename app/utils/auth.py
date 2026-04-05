@@ -1,26 +1,11 @@
 from fastapi import HTTPException, Depends, Request
-from firebase_admin import auth  # ✅ CORRECT IMPORT
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import time
 
 from app.database import get_db
+from app.core.firebase import verify_firebase_token
 from app.models.user import User
-
-
-# 🔐 Verify Firebase Token
-def verify_firebase_token(token: str):
-    try:
-        decoded_token = auth.verify_id_token(
-            token,
-            clock_skew_seconds=60
-        )
-        return decoded_token
-    except Exception:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid or expired token"
-        )
 
 
 # 👤 Ensure User Exists in Database
@@ -73,13 +58,7 @@ def get_current_user(
 
     token = auth_header.split(" ")[1]
 
-    try:
-        decoded_token = auth.verify_id_token(
-            token,
-            clock_skew_seconds=60
-        )
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid Firebase token")
+    decoded_token = verify_firebase_token(token)
 
     # Ensure a corresponding DB user exists (creates/links by firebase_uid/email if needed).
     db_user = ensure_db_user(decoded_token, db)

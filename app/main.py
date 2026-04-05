@@ -26,7 +26,6 @@ from app.api.routes import (
 from app.database import Base, engine
 from app.models import caterer, ngo_profile, user as user_model
 from app.models import event as event_model
-from app.core import firebase
 from app.api.routes import ngo
 from app.api.routes import admin
 from app.models import ngo_profile as ngo_profile_model

@@ -1,53 +1,97 @@
+from __future__ import annotations
+
+import base64
+import json
+import logging
+import os
+from pathlib import Path
+
 import firebase_admin
-from firebase_admin import credentials, auth
-from fastapi import Depends, HTTPException, Header
-from requests import Session
+from fastapi import HTTPException
+from firebase_admin import auth, credentials
 
-from app.database import get_db
-from app.models.user import User
+logger = logging.getLogger(__name__)
 
-if not firebase_admin._apps:
-    cred = credentials.Certificate("firebase_service_account.json")
-    firebase_admin.initialize_app(cred)
+_DEFAULT_SERVICE_ACCOUNT_PATH = Path("firebase_service_account.json")
 
-def verify_firebase_token(id_token: str):
+
+def _build_firebase_credential() -> credentials.Base:
+    """Build a Firebase credential from env vars or a local JSON file.
+
+    Supported sources (in order):
+    - FIREBASE_SERVICE_ACCOUNT_JSON_B64: base64-encoded JSON
+    - FIREBASE_SERVICE_ACCOUNT_JSON: raw JSON
+    - FIREBASE_SERVICE_ACCOUNT_PATH: path to JSON
+    - GOOGLE_APPLICATION_CREDENTIALS: path to JSON
+    - firebase_service_account.json: local file (dev-only fallback)
+    """
+
+    json_b64 = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON_B64")
+    json_raw = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+    path_raw = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+    if json_b64:
+        try:
+            json_raw = base64.b64decode(json_b64).decode("utf-8")
+        except Exception:
+            logger.exception("Invalid FIREBASE_SERVICE_ACCOUNT_JSON_B64")
+            raise
+
+    if json_raw:
+        try:
+            info = json.loads(json_raw)
+        except json.JSONDecodeError:
+            logger.exception("Invalid FIREBASE_SERVICE_ACCOUNT_JSON (not valid JSON)")
+            raise
+
+        return credentials.Certificate(info)
+
+    if path_raw:
+        path = Path(path_raw)
+        if path.exists():
+            return credentials.Certificate(str(path))
+
+        raise FileNotFoundError(f"Firebase service account file not found: {path}")
+
+    if _DEFAULT_SERVICE_ACCOUNT_PATH.exists():
+        return credentials.Certificate(str(_DEFAULT_SERVICE_ACCOUNT_PATH))
+
+    raise FileNotFoundError(
+        "Firebase service account is not configured. Provide FIREBASE_SERVICE_ACCOUNT_JSON(_B64) "
+        "or FIREBASE_SERVICE_ACCOUNT_PATH/GOOGLE_APPLICATION_CREDENTIALS."
+    )
+
+
+def ensure_firebase_initialized() -> bool:
+    """Initialize the default Firebase app if possible.
+
+    Returns True if initialized (or already initialized), otherwise False.
+    Never raises due to missing credentials so app startup won't crash.
+    """
+
+    if firebase_admin._apps:
+        return True
+
     try:
-        return auth.verify_id_token(id_token)
+        cred = _build_firebase_credential()
+    except Exception as exc:
+        logger.warning("Firebase not initialized: %s", str(exc))
+        return False
+
+    try:
+        firebase_admin.initialize_app(cred)
+        logger.info("Firebase initialized")
+        return True
     except Exception:
-        raise HTTPException(status_code=401, detail="Invalid Firebase token")
+        logger.exception("Firebase initialization failed")
+        return False
 
-def get_current_user(
-    authorization: str = Header(...),
-    db: Session = Depends(get_db)
-) -> User:
-    """
-    Extracts Firebase token from Authorization header,
-    verifies it, and returns the corresponding User from DB.
-    """
 
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
+def verify_firebase_token(token: str):
+    if not ensure_firebase_initialized():
+        raise HTTPException(status_code=503, detail="Firebase is not configured on this service")
 
-    token = authorization.replace("Bearer ", "")
-    decoded = verify_firebase_token(token)
-
-    firebase_uid = decoded.get("uid")
-    email = decoded.get("email")
-
-    if not firebase_uid:
-        raise HTTPException(status_code=401, detail="Invalid Firebase token")
-
-    # 🔹 Find user in DB
-    user = db.query(User).filter(User.firebase_uid == firebase_uid).first()
-
-    if not user:
-        # 🔹 Optional: auto-create user if not exists
-        user = User(
-            firebase_uid=firebase_uid,
-            email=email
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-    return user
+    try:
+        return auth.verify_id_token(token, clock_skew_seconds=60)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")

@@ -1,11 +1,16 @@
-import firebase_admin
-from firebase_admin import credentials
-import os
+"""Firebase utilities.
 
-# Check if Firebase app is already initialized
-if not firebase_admin._apps:
-    service_account_path = "firebase_service_account.json"
-    
-    if os.path.exists(service_account_path):
-        cred = credentials.Certificate(service_account_path)
-        firebase_admin.initialize_app(cred)
+This module previously initialized Firebase at import time by reading a local
+`firebase_service_account.json`. Deploys (e.g. Render) should use env vars.
+"""
+
+from app.core.firebase import ensure_firebase_initialized
+
+
+def initialize_firebase() -> bool:
+    """Backward-compatible initializer.
+
+    Returns True if Firebase is initialized, else False.
+    """
+
+    return ensure_firebase_initialized()

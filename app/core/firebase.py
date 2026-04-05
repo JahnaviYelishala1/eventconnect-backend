@@ -12,22 +12,19 @@ from firebase_admin import auth, credentials
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_SERVICE_ACCOUNT_PATH = Path("firebase_service_account.json")
-
-
 def _build_firebase_credential() -> credentials.Base:
-    """Build a Firebase credential from env vars or a local JSON file.
+    """Build a Firebase credential from environment variables.
 
     Supported sources (in order):
     - FIREBASE_SERVICE_ACCOUNT_JSON_B64: base64-encoded JSON
     - FIREBASE_SERVICE_ACCOUNT_JSON: raw JSON
+    - FIREBASE_SERVICE_ACCOUNT: raw JSON (alias)
     - FIREBASE_SERVICE_ACCOUNT_PATH: path to JSON
     - GOOGLE_APPLICATION_CREDENTIALS: path to JSON
-    - firebase_service_account.json: local file (dev-only fallback)
     """
 
     json_b64 = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON_B64")
-    json_raw = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+    json_raw = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON") or os.getenv("FIREBASE_SERVICE_ACCOUNT")
     path_raw = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
     if json_b64:
@@ -52,9 +49,6 @@ def _build_firebase_credential() -> credentials.Base:
             return credentials.Certificate(str(path))
 
         raise FileNotFoundError(f"Firebase service account file not found: {path}")
-
-    if _DEFAULT_SERVICE_ACCOUNT_PATH.exists():
-        return credentials.Certificate(str(_DEFAULT_SERVICE_ACCOUNT_PATH))
 
     raise FileNotFoundError(
         "Firebase service account is not configured. Provide FIREBASE_SERVICE_ACCOUNT_JSON(_B64) "
